@@ -2,9 +2,19 @@
 
 ## Project overview
 
-- This repository is a **TypeScript backend service** built with **Hono**.
+- This repository is a TypeScript backend service built with Hono.
 - Target runtime: Node.js for local development, edge/serverless platforms in production.
-- Main entrypoint: `src/app.ts` exporting a configured `Hono` instance.
+- Main entrypoint: `src/app.ts` exporting a configured Hono instance.
+
+## Agent workflow (Codex agents guide aligned)
+
+- Always add or update automated tests when changing behavior; keep coverage from regressing.
+- Before finishing any task, run and fix results for: `npm lint`, `npm typecheck`, `npm test`.
+- Exercise APIs with Hono CLI during development and before handoff:
+  - Start server when needed: `npx hono serve src/index.ts --watch --port 3000`.
+  - Quick requests without curl: `echo "GET /health" | npx hono request src/index.ts` (swap path/method as needed).
+- Prefer repo scripts over ad-hoc commands; avoid committing generated artifacts.
+- Keep edits small and focused; document behavior changes and related test updates.
 
 ## Setup commands
 
@@ -18,31 +28,30 @@ When you propose or apply changes, prefer using these existing scripts instead o
 
 ---
 
-## Architecture & patterns
+## Architecture and patterns
 
 Follow common backend design patterns and keep responsibilities separate:
 
 - HTTP layer:
-  - Use **Hono routes** only for HTTP concerns: routing, params, auth, validation, and mapping results to HTTP responses.
-  - Do **not** place database queries or business logic directly in route definitions.
+  - Use Hono routes only for HTTP concerns: routing, params, auth, validation, and mapping results to HTTP responses.
+  - Do not place database queries or business logic directly in route definitions.
 
 - Structure:
-  - `src/routes/**` – Hono route modules (`/users`, `/auth`, `/health`, etc.)
-  - `src/controllers/**` – request handlers that orchestrate services and map domain errors to HTTP responses.
-  - `src/services/**` – business logic (stateless, pure where possible).
-  - `src/repositories/**` – data access layer (DB, external APIs, queues, etc.).
-  - `src/config/**` – configuration, environment variables, app-wide constants.
-  - `tests/**` – tests mirroring the `src/` structure.
+  - `src/routes/**` - Hono route modules (`/users`, `/auth`, `/health`, etc.)
+  - `src/controllers/**` - request handlers that orchestrate services and map domain errors to HTTP responses.
+  - `src/services/**` - business logic (stateless, pure where possible).
+  - `src/repositories/**` - data access layer (DB, external APIs, queues, etc.).
+  - `src/config/**` - configuration, environment variables, app-wide constants.
+  - `tests/**` - tests mirroring the `src/` structure.
 
 - Dependency flow:
-  - Routes → Controllers → Services → Repositories → External systems.
-  - Do **not** depend in the opposite direction.
+  - Routes -> Controllers -> Services -> Repositories -> External systems.
+  - Do not depend in the opposite direction.
 
 - Error handling:
   - Use centralized Hono middleware for error and logging when possible.
   - Map domain errors to proper HTTP status codes (e.g., 400, 404, 409, 422, 500).
-  - Return structured JSON error responses with a stable shape:
-    - `{ error: { code: string, message: string, details?: unknown } }`.
+  - Return structured JSON error responses with a stable shape: `{ error: { code: string, message: string, details?: unknown } }`.
 
 ---
 
@@ -71,8 +80,8 @@ Follow common backend design patterns and keep responsibilities separate:
   - Errors: use consistent JSON error format from the previous section.
 
 - Typing:
-  - Use Hono’s type parameters to strongly type route params, query, and JSON bodies.
-  - Avoid `any`; use explicit types or `unknown` + safe narrowing.
+  - Use Hono type parameters to strongly type route params, query, and JSON bodies.
+  - Avoid `any`; use explicit types or `unknown` plus safe narrowing.
 
 ---
 
@@ -90,23 +99,23 @@ Follow common backend design patterns and keep responsibilities separate:
 - Test framework: `vitest` (or the one defined in `package.json`).
 - Use Hono testing helpers (for example `@hono/testing`) to test routes as HTTP requests where available.
 - For every new route or behavior change:
-  - Add **unit tests** for service functions.
-  - Add **integration-style tests** for the route using the test client.
+  - Add unit tests for service functions.
+  - Add integration-style tests for the route using the test client.
 - When fixing a bug:
   - First add a failing regression test.
   - Then fix the implementation and ensure the test passes.
 
 Place tests next to the code or in a mirrored structure, for example:
-- `src/services/user-service.ts` → `tests/services/user-service.test.ts`
-- `src/routes/users.ts` → `tests/routes/users.test.ts`
+- `src/services/user-service.ts` -> `tests/services/user-service.test.ts`
+- `src/routes/users.ts` -> `tests/routes/users.test.ts`
 
 ---
 
-## Type checking & linting
+## Type checking and linting
 
 - Treat TypeScript errors as blockers. Do not suppress errors with `any` or `@ts-ignore` unless absolutely necessary and with a short comment explaining why.
-- Use **Biome** for linting and formatting:
-  - Prefer to **fix** issues to satisfy the existing Biome config rather than changing the rules.
+- Use Biome for linting and formatting:
+  - Prefer to fix issues to satisfy the existing Biome config rather than changing the rules.
   - If a rule is consistently getting in the way, propose changing the config in a separate, explicit step.
 
 Before considering a task done, run (if these scripts exist):
@@ -114,15 +123,15 @@ Before considering a task done, run (if these scripts exist):
 1. `npm lint`
 2. `npm typecheck`
 3. `npm test`
+4. Hono CLI smoke for key routes (for example `echo "GET /health" | npx hono request src/index.ts`)
 
 If you add new code, also add or update tests so that coverage does not regress.
 
 ---
 
-## Pull requests & refactors
+## Pull requests and refactors
 
 - Prefer small, focused changes rather than large mixed refactors.
 - When refactoring:
   - Keep behavior the same unless the task explicitly includes behavior changes.
   - Preserve all existing tests; if tests need to be updated, explain why.
-
