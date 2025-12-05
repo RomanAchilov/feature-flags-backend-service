@@ -1,0 +1,109 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum FeatureEnvironment {
+  development
+  staging
+  production
+}
+
+enum FeatureFlagType {
+  BOOLEAN
+  MULTIVARIANT
+}
+
+enum FeatureFlagAuditAction {
+  create
+  update
+  delete
+}
+
+model FeatureFlag {
+  /// Уникальный идентификатор фича-флага.
+  id          String                     @id @default(cuid())
+  /// Человекочитаемое имя флага.
+  name        String
+  /// Машинный уникальный ключ для обращения к флагу.
+  key         String                     @unique
+  /// Описание назначения флага.
+  description String?
+  /// Теги для группировки/поиска.
+  tags        String[]                   @default([])
+  /// Тип флага для будущей поддержки многовариантных сценариев.
+  type        FeatureFlagType            @default(BOOLEAN)
+  createdAt   DateTime                   @default(now())
+  updatedAt   DateTime                   @updatedAt
+  deletedAt   DateTime?
+
+  environments FeatureFlagEnvironment[]
+  auditLogs    FeatureFlagAuditLog[]
+}
+
+model FeatureFlagEnvironment {
+  /// Уникальный идентификатор конфигурации флага в окружении.
+  id          String              @id @default(cuid())
+  /// Ссылка на фича-флаг.
+  flagId      String
+  /// Окружение, для которого задается конфигурация.
+  environment FeatureEnvironment
+  /// Базовое состояние включен/выключен.
+  enabled     Boolean             @default(false)
+  /// Процент раскатки (0-100), если применяется частичный rollout.
+  rolloutPercentage Int?
+  /// Явное принудительное включение.
+  forceEnabled  Boolean?
+  /// Явное принудительное выключение.
+  forceDisabled Boolean?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  flag            FeatureFlag             @relation(fields: [flagId], references: [id], onDelete: Cascade)
+  userTargets     FeatureFlagUserTarget[]
+
+  @@index([flagId])
+  @@unique([flagId, environment])
+}
+
+model FeatureFlagUserTarget {
+  /// Уникальный идентификатор записи таргетинга.
+  id                 String                  @id @default(cuid())
+  /// Конкретная конфигурация флага в окружении.
+  flagEnvironmentId  String
+  /// Идентификатор пользователя, для которого переопределяется флаг.
+  userId             String
+  /// true - включить флаг, false - исключить.
+  include            Boolean
+  createdAt          DateTime                @default(now())
+
+  environment FeatureFlagEnvironment @relation(fields: [flagEnvironmentId], references: [id], onDelete: Cascade)
+
+  @@index([flagEnvironmentId])
+  @@unique([flagEnvironmentId, userId])
+}
+
+model FeatureFlagAuditLog {
+  /// Уникальная запись аудита.
+  id        String                     @id @default(cuid())
+  /// Ссылка на фича-флаг, для которого произошло изменение.
+  flagId    String
+  /// Когда произошло изменение.
+  timestamp DateTime                   @default(now())
+  /// Кто произвел изменение (email или id пользователя).
+  changedBy String
+  /// Тип действия.
+  action    FeatureFlagAuditAction
+  /// Снимок состояния до изменения.
+  before    Json?
+  /// Снимок состояния после изменения.
+  after     Json?
+
+  flag FeatureFlag @relation(fields: [flagId], references: [id], onDelete: Cascade)
+
+  @@index([flagId])
+}
