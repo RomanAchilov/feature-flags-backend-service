@@ -53,6 +53,13 @@ Follow common backend design patterns and keep responsibilities separate:
   - https://hono.dev/llms-full.txt (full developer docs)
   - https://hono.dev/docs/guides/best-practices
 
+- Hono CLI (use these before adding custom scripts or tools):
+  - Show docs locally: `npx hono docs` (optionally pass a path).
+  - Search docs quickly: `npx hono search "<query>"`.
+  - Run the app with the built-in server: `npx hono serve src/index.ts --watch --port 3000` (change entry if different).
+  - Send quick requests without curl: `echo "GET /" | npx hono request src/index.ts` (or point to a file with HTTP request data).
+  - Produce an optimized bundle if explicitly needed: `npx hono optimize src/index.ts --output dist/app.js` (avoid committing generated output unless requested).
+
 - Use Hono built-in middleware where possible instead of reimplementing cross-cutting concerns:
   - Auth: `basicAuth`, `bearerAuth`
   - CORS: `cors`
