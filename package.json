@@ -1,28 +1,28 @@
 {
-  "name": "feature-flags-backend-service",
-  "type": "module",
-  "scripts": {
-    "dev": "tsx watch src/index.ts",
-    "build": "tsc",
-    "start": "node dist/index.js",
-    "format": "biome format --write .",
-    "lint": "biome lint --write .",
-    "check": "biome check --write .",
-    "typecheck": "tsc --noEmit",
-    "test": "vitest"
-  },
-  "dependencies": {
-    "@hono/node-server": "^1.19.6",
-    "@prisma/client": "^5.19.1",
-    "hono": "^4.10.7",
-    "zod": "^4.1.13"
-  },
-  "devDependencies": {
-    "@biomejs/biome": "2.3.8",
-    "@types/node": "^24.10.1",
-    "prisma": "^5.19.1",
-    "tsx": "^4.21.0",
-    "typescript": "^5.9.3",
-    "vitest": "^4.0.15"
-  }
+	"name": "feature-flags-backend-service",
+	"type": "module",
+	"scripts": {
+		"dev": "tsx watch src/index.ts",
+		"build": "tsc",
+		"start": "node dist/index.js",
+		"format": "biome format --write .",
+		"lint": "biome lint --write .",
+		"check": "biome check --write .",
+		"typecheck": "tsc --noEmit",
+		"test": "vitest"
+	},
+	"dependencies": {
+		"@hono/node-server": "^1.19.6",
+		"@prisma/client": "^5.19.1",
+		"hono": "^4.10.7",
+		"zod": "^4.1.13"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "2.3.8",
+		"@types/node": "^24.10.1",
+		"prisma": "^5.19.1",
+		"tsx": "^4.21.0",
+		"typescript": "^5.9.3",
+		"vitest": "^4.0.15"
+	}
 }

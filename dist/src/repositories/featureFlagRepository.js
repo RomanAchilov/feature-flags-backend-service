@@ -1,37 +1,7 @@
-import {
-	FeatureEnvironment,
-	FeatureFlagType,
-	type Prisma,
-} from "@prisma/client";
+import { FeatureEnvironment, FeatureFlagType } from "@prisma/client";
 import { prisma } from "../db/prisma";
-
-export type EnvironmentConfigInput = {
-	environment: FeatureEnvironment;
-	enabled?: boolean;
-	rolloutPercentage?: number | null;
-	forceEnabled?: boolean | null;
-	forceDisabled?: boolean | null;
-};
-
-export type CreateFeatureFlagInput = {
-	key: string;
-	name: string;
-	description?: string | null;
-	tags?: string[];
-	type?: FeatureFlagType;
-	environments?: EnvironmentConfigInput[];
-};
-
-export type UpdateFeatureFlagInput = {
-	name?: string;
-	description?: string | null;
-	tags?: string[];
-	type?: FeatureFlagType;
-	environments?: EnvironmentConfigInput[];
-};
-
 // Получить флаг по ключу; выбрасывает Prisma ошибки при проблемах с подключением.
-export const getFlagByKey = async (key: string) => {
+export const getFlagByKey = async (key) => {
 	return prisma.featureFlag.findFirst({
 		where: { key, deletedAt: null },
 		include: {
@@ -39,18 +9,10 @@ export const getFlagByKey = async (key: string) => {
 		},
 	});
 };
-
 // Список флагов с фильтрами/пагинацией; может выбросить PrismaClientKnownRequestError при неверных параметрах.
-export const listFlags = async (options?: {
-	environment?: FeatureEnvironment;
-	search?: string;
-	tag?: string;
-	skip?: number;
-	take?: number;
-}) => {
+export const listFlags = async (options) => {
 	const { environment, search, tag, skip, take } = options ?? {};
-
-	const where: Prisma.FeatureFlagWhereInput = {
+	const where = {
 		deletedAt: null,
 		...(search
 			? {
@@ -62,7 +24,6 @@ export const listFlags = async (options?: {
 			: undefined),
 		...(tag ? { tags: { has: tag } } : undefined),
 	};
-
 	return prisma.featureFlag.findMany({
 		where,
 		include: {
@@ -77,18 +38,15 @@ export const listFlags = async (options?: {
 		take,
 	});
 };
-
 // Создать флаг с базовой конфигурацией по окружениям; может выбросить уникальный конфликт по ключу.
-export const createFlag = async (data: CreateFeatureFlagInput) => {
-	const defaultEnvironments: EnvironmentConfigInput[] = Object.values(
-		FeatureEnvironment,
-	).map((environment) => ({ environment }));
-
+export const createFlag = async (data) => {
+	const defaultEnvironments = Object.values(FeatureEnvironment).map(
+		(environment) => ({ environment }),
+	);
 	const environments =
 		data.environments && data.environments.length > 0
 			? dedupeEnvironments(data.environments)
 			: defaultEnvironments;
-
 	return prisma.featureFlag.create({
 		data: {
 			key: data.key,
@@ -109,21 +67,15 @@ export const createFlag = async (data: CreateFeatureFlagInput) => {
 		include: { environments: true },
 	});
 };
-
 // Обновить флаг по ключу; возвращает null, если флаг не найден/удален; может выбросить ошибки целостности при upsert окружений.
-export const updateFlagByKey = async (
-	key: string,
-	data: UpdateFeatureFlagInput,
-) => {
+export const updateFlagByKey = async (key, data) => {
 	const existing = await prisma.featureFlag.findFirst({
 		where: { key, deletedAt: null },
 	});
-
 	if (!existing) {
 		return null;
 	}
-
-	const updateData: Prisma.FeatureFlagUpdateInput = {
+	const updateData = {
 		...(data.name !== undefined ? { name: data.name } : undefined),
 		...(data.description !== undefined
 			? { description: data.description }
@@ -131,7 +83,6 @@ export const updateFlagByKey = async (
 		...(data.tags !== undefined ? { tags: data.tags } : undefined),
 		...(data.type !== undefined ? { type: data.type } : undefined),
 	};
-
 	if (data.environments) {
 		const envs = dedupeEnvironments(data.environments);
 		updateData.environments = {
@@ -164,36 +115,29 @@ export const updateFlagByKey = async (
 			})),
 		};
 	}
-
 	return prisma.featureFlag.update({
 		where: { id: existing.id },
 		data: updateData,
 		include: { environments: true },
 	});
 };
-
 // Мягкое удаление по ключу (проставляет deletedAt); возвращает true, если запись была обновлена. Полезно, чтобы сохранить аудит и ссылки.
-export const deleteFlagByKey = async (key: string) => {
+export const deleteFlagByKey = async (key) => {
 	const result = await prisma.featureFlag.updateMany({
 		where: { key, deletedAt: null },
 		data: { deletedAt: new Date() },
 	});
-
 	return result.count > 0;
 };
-
-const dedupeEnvironments = (envs: EnvironmentConfigInput[]) => {
-	const seen = new Set<FeatureEnvironment>();
-	const result: EnvironmentConfigInput[] = [];
-
+const dedupeEnvironments = (envs) => {
+	const seen = new Set();
+	const result = [];
 	for (const env of envs) {
 		if (seen.has(env.environment)) {
 			continue;
 		}
-
 		seen.add(env.environment);
 		result.push(env);
 	}
-
 	return result;
 };

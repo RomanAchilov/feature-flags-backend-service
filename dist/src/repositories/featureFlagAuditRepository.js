@@ -1,29 +1,17 @@
-import type { FeatureFlagAuditAction, Prisma } from "@prisma/client";
 import { prisma } from "../db/prisma";
-
-export const logFlagChange = async (params: {
-	flagId: string;
-	action: FeatureFlagAuditAction;
-	changedBy: string;
-	before: unknown;
-	after: unknown;
-}) => {
+export const logFlagChange = async (params) => {
 	// Записывает снимок изменений по флагу; может бросить Prisma ошибки, если flagId не существует.
 	return prisma.featureFlagAuditLog.create({
 		data: {
 			flagId: params.flagId,
 			action: params.action,
 			changedBy: params.changedBy,
-			before: params.before as Prisma.InputJsonValue,
-			after: params.after as Prisma.InputJsonValue,
+			before: params.before,
+			after: params.after,
 		},
 	});
 };
-
-export const getAuditLogForFlag = async (
-	flagId: string,
-	options?: { skip?: number; take?: number },
-) => {
+export const getAuditLogForFlag = async (flagId, options) => {
 	// Возвращает историю изменений для флага; может бросить Prisma ошибки при неверных пагинационных параметрах.
 	return prisma.featureFlagAuditLog.findMany({
 		where: { flagId },

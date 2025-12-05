@@ -2,12 +2,6 @@ import { FeatureEnvironment } from "@prisma/client";
 import { Hono } from "hono";
 import { z } from "zod";
 import { prisma } from "../db/prisma";
-import type {
-	Environment,
-	FeatureFlagWithEnvs,
-	UserContext,
-} from "../domain/featureFlagTypes";
-import type { CurrentUser } from "../middleware/auth";
 import { evaluateFeatureFlag } from "../services/featureFlagService";
 
 const EvaluateSchema = z.object({
@@ -20,11 +14,7 @@ const EvaluateSchema = z.object({
 	}),
 	flags: z.array(z.string().min(1)),
 });
-
-export const evaluateRoute = new Hono<{
-	Variables: { currentUser: CurrentUser };
-}>();
-
+export const evaluateRoute = new Hono();
 evaluateRoute.post("/", async (c) => {
 	const body = await c.req.json().catch(() => null);
 	const parsed = EvaluateSchema.safeParse(body);
@@ -40,9 +30,7 @@ evaluateRoute.post("/", async (c) => {
 			400,
 		);
 	}
-
 	const { environment, user, flags } = parsed.data;
-
 	try {
 		const foundFlags = await prisma.featureFlag.findMany({
 			where: { key: { in: flags }, deletedAt: null },
@@ -54,8 +42,7 @@ evaluateRoute.post("/", async (c) => {
 				},
 			},
 		});
-
-		const domainFlags: Record<string, FeatureFlagWithEnvs> = {};
+		const domainFlags = {};
 		for (const flag of foundFlags) {
 			domainFlags[flag.key] = {
 				id: flag.id,
@@ -65,7 +52,7 @@ evaluateRoute.post("/", async (c) => {
 				tags: flag.tags,
 				type: flag.type,
 				environments: flag.environments.map((env) => ({
-					environment: env.environment as Environment,
+					environment: env.environment,
 					enabled: env.enabled,
 					rolloutPercentage: env.rolloutPercentage,
 					forceEnabled: env.forceEnabled,
@@ -77,21 +64,15 @@ evaluateRoute.post("/", async (c) => {
 				})),
 			};
 		}
-
-		const result: Record<string, boolean> = {};
+		const result = {};
 		for (const key of flags) {
 			const flag = domainFlags[key];
 			if (!flag) {
 				result[key] = false;
 				continue;
 			}
-			result[key] = evaluateFeatureFlag(
-				flag,
-				environment as Environment,
-				user as UserContext,
-			);
+			result[key] = evaluateFeatureFlag(flag, environment, user);
 		}
-
 		return c.json({ flags: result });
 	} catch (error) {
 		console.error("Failed to evaluate flags", error);
