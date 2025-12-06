@@ -89,6 +89,39 @@ export const createFlag = async (data: CreateFeatureFlagInput) => {
 			? dedupeEnvironments(data.environments)
 			: defaultEnvironments;
 
+	// If a soft-deleted flag with the same key exists, revive it instead of failing with unique conflict.
+	const existing = await prisma.featureFlag.findFirst({
+		where: { key: data.key },
+		include: { environments: true },
+	});
+
+	if (existing && existing.deletedAt) {
+		await prisma.featureFlagEnvironment.deleteMany({
+			where: { flagId: existing.id },
+		});
+
+		return prisma.featureFlag.update({
+			where: { id: existing.id },
+			data: {
+				deletedAt: null,
+				name: data.name,
+				description: data.description ?? null,
+				tags: data.tags ?? [],
+				type: data.type ?? FeatureFlagType.BOOLEAN,
+				environments: {
+					create: environments.map((env) => ({
+						environment: env.environment,
+						enabled: env.enabled ?? false,
+						rolloutPercentage: env.rolloutPercentage ?? null,
+						forceEnabled: env.forceEnabled ?? null,
+						forceDisabled: env.forceDisabled ?? null,
+					})),
+				},
+			},
+			include: { environments: true },
+		});
+	}
+
 	return prisma.featureFlag.create({
 		data: {
 			key: data.key,

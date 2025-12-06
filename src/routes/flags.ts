@@ -2,6 +2,7 @@ import {
 	FeatureEnvironment,
 	FeatureFlagAuditAction,
 	FeatureFlagType,
+	Prisma,
 } from "@prisma/client";
 import { Hono } from "hono";
 import { z } from "zod";
@@ -92,6 +93,10 @@ flagsRoute.get("/", async (c) => {
 		return c.json({ data: flags });
 	} catch (error) {
 		console.error("Failed to list flags", error);
+		if (error instanceof Prisma.PrismaClientKnownRequestError) {
+			// If tables are not yet created or DB is empty/unreachable, respond with an empty list instead of 500.
+			return c.json({ data: [] });
+		}
 		return c.json(
 			{ error: { code: "internal_error", message: "Failed to list flags" } },
 			500,
@@ -136,6 +141,8 @@ flagsRoute.post("/", async (c) => {
 		return c.json({ data: full }, 201);
 	} catch (error) {
 		console.error("Failed to create flag", error);
+		const handled = handlePrismaError(error);
+		if (handled) return c.json(handled.body, handled.status as 409 | 400);
 		return c.json(
 			{ error: { code: "internal_error", message: "Failed to create flag" } },
 			500,
@@ -274,6 +281,8 @@ flagsRoute.patch("/:key", async (c) => {
 		return c.json({ data: after });
 	} catch (error) {
 		console.error("Failed to update flag", error);
+		const handled = handlePrismaError(error);
+		if (handled) return c.json(handled.body, handled.status as 409 | 400);
 		return c.json(
 			{ error: { code: "internal_error", message: "Failed to update flag" } },
 			500,
@@ -405,4 +414,24 @@ const replaceUserTargets = async (
 			skipDuplicates: true,
 		}),
 	]);
+};
+
+const handlePrismaError = (
+	error: unknown,
+): { status: number; body: { error: { code: string; message: string } } } | null => {
+	if (error instanceof Prisma.PrismaClientKnownRequestError) {
+		if (error.code === "P2002") {
+			return {
+				status: 409,
+				body: { error: { code: "conflict", message: "Flag with this key already exists" } },
+			};
+		}
+		if (error.code === "P2003" || error.code === "P2025") {
+			return {
+				status: 400,
+				body: { error: { code: "bad_request", message: "Invalid reference or missing record" } },
+			};
+		}
+	}
+	return null;
 };
