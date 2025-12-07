@@ -44,6 +44,10 @@ vi.mock("../../src/db/prisma", () => ({
 			createMany: vi.fn(),
 			deleteMany: vi.fn(),
 		},
+		featureFlagSegmentTarget: {
+			createMany: vi.fn(),
+			deleteMany: vi.fn(),
+		},
 		featureFlagAuditLog: {
 			count: vi.fn(),
 		},
@@ -59,6 +63,10 @@ const prismaMock = prisma as unknown as {
 		findMany: ReturnType<typeof vi.fn>;
 	};
 	featureFlagUserTarget: {
+		createMany: ReturnType<typeof vi.fn>;
+		deleteMany: ReturnType<typeof vi.fn>;
+	};
+	featureFlagSegmentTarget: {
 		createMany: ReturnType<typeof vi.fn>;
 		deleteMany: ReturnType<typeof vi.fn>;
 	};
@@ -98,6 +106,7 @@ const sampleFlag = {
 			forceEnabled: null,
 			forceDisabled: null,
 			userTargets: [],
+			segmentTargets: [],
 		},
 	],
 	auditLogs: [],
@@ -120,6 +129,8 @@ describe("flags route", () => {
 		prismaMock.featureFlagEnvironment.findMany.mockReset();
 		prismaMock.featureFlagUserTarget.createMany.mockReset();
 		prismaMock.featureFlagUserTarget.deleteMany.mockReset();
+		prismaMock.featureFlagSegmentTarget.createMany.mockReset();
+		prismaMock.featureFlagSegmentTarget.deleteMany.mockReset();
 		prismaMock.featureFlagAuditLog.count.mockReset();
 		prismaMock.$transaction.mockReset();
 		listFlagsMock.mockReset();

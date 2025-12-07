@@ -20,6 +20,7 @@ const baseFlag: FeatureFlagWithEnvs = {
 			forceEnabled: null,
 			forceDisabled: null,
 			userTargets: [],
+			segmentTargets: [],
 		},
 	],
 };
@@ -61,10 +62,12 @@ describe("evaluateFeatureFlag", () => {
 		const targeted = buildFlag({
 			enabled: false,
 			userTargets: [{ userId: "user-123", include: true }],
+			segmentTargets: [{ segment: "employee", include: false }],
 		});
 		const excluded = buildFlag({
 			enabled: true,
 			userTargets: [{ userId: "user-123", include: false }],
+			segmentTargets: [{ segment: "employee", include: true }],
 		});
 
 		expect(
@@ -73,6 +76,66 @@ describe("evaluateFeatureFlag", () => {
 		expect(
 			evaluateFeatureFlag(excluded, "production", { id: "user-123" }),
 		).toBe(false);
+	});
+
+	it("matches segment targets when provided", () => {
+		const targeted = buildFlag({
+			enabled: false,
+			segmentTargets: [{ segment: "employee", include: true }],
+		});
+		const excluded = buildFlag({
+			enabled: true,
+			segmentTargets: [{ segment: "employee", include: false }],
+		});
+
+		expect(
+			evaluateFeatureFlag(targeted, "production", {
+				id: "user-456",
+				segments: ["Employee"],
+			}),
+		).toBe(true);
+		expect(
+			evaluateFeatureFlag(excluded, "production", {
+				id: "user-789",
+				segments: ["employee"],
+			}),
+		).toBe(false);
+	});
+
+	it("derives segments from user attributes for phone and birthdate", () => {
+		const targeted = buildFlag({
+			enabled: false,
+			segmentTargets: [
+				{ segment: "phone-last4:1234", include: true },
+				{ segment: "birthdate:1990-01-01", include: true },
+			],
+		});
+
+		expect(
+			evaluateFeatureFlag(targeted, "production", {
+				id: "user-001",
+				phoneNumber: "+1 (555) 001234",
+				birthDate: "1990-01-01",
+			}),
+		).toBe(true);
+	});
+
+	it("derives employee and new customer segments from booleans", () => {
+		const targeted = buildFlag({
+			enabled: false,
+			segmentTargets: [
+				{ segment: "employee", include: true },
+				{ segment: "new_customer", include: true },
+			],
+		});
+
+		expect(
+			evaluateFeatureFlag(targeted, "production", {
+				id: "user-002",
+				isEmployee: true,
+				isNewCustomer: true,
+			}),
+		).toBe(true);
 	});
 
 	it("uses rollout percentage when provided", () => {

@@ -4,6 +4,11 @@ export interface UserContext {
 	id: string;
 	role?: string;
 	country?: string;
+	segments?: string[];
+	isEmployee?: boolean;
+	isNewCustomer?: boolean;
+	phoneNumber?: string;
+	birthDate?: string;
 	attributes?: Record<string, unknown>;
 }
 
@@ -22,6 +27,10 @@ export type FeatureFlagWithEnvs = {
 		forceDisabled: boolean | null;
 		userTargets: Array<{
 			userId: string;
+			include: boolean;
+		}>;
+		segmentTargets: Array<{
+			segment: string;
 			include: boolean;
 		}>;
 	}>;

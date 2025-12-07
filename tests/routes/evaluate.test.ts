@@ -47,6 +47,7 @@ describe("evaluate route", () => {
 						forceEnabled: null,
 						forceDisabled: null,
 						userTargets: [],
+						segmentTargets: [],
 					},
 				],
 			},
@@ -72,6 +73,7 @@ describe("evaluate route", () => {
 				environments: {
 					include: {
 						userTargets: true,
+						segmentTargets: { orderBy: { createdAt: "asc" } },
 					},
 				},
 			},

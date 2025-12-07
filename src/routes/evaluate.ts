@@ -16,6 +16,11 @@ const EvaluateSchema = z.object({
 		id: z.string().min(1),
 		role: z.string().optional(),
 		country: z.string().optional(),
+		segments: z.array(z.string().min(1)).optional(),
+		isEmployee: z.boolean().optional(),
+		isNewCustomer: z.boolean().optional(),
+		phoneNumber: z.string().optional(),
+		birthDate: z.string().optional(),
 		attributes: z.record(z.string(), z.unknown()).optional(),
 	}),
 	flags: z.array(z.string().min(1)),
@@ -50,6 +55,9 @@ evaluateRoute.post("/", async (c) => {
 				environments: {
 					include: {
 						userTargets: true,
+						segmentTargets: {
+							orderBy: { createdAt: "asc" },
+						},
 					},
 				},
 			},
@@ -74,6 +82,11 @@ evaluateRoute.post("/", async (c) => {
 						userId: target.userId,
 						include: target.include,
 					})),
+					segmentTargets:
+						env.segmentTargets?.map((target) => ({
+							segment: target.segment.toLowerCase(),
+							include: target.include,
+						})) ?? [],
 				})),
 			};
 		}

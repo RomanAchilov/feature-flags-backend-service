@@ -34,6 +34,12 @@ const UserTargetSchema = z.object({
 	include: z.boolean(),
 });
 
+const SegmentTargetSchema = z.object({
+	environment: z.nativeEnum(FeatureEnvironment),
+	segment: z.string().min(1),
+	include: z.boolean(),
+});
+
 const CreateFlagSchema = z.object({
 	key: z.string().min(1),
 	name: z.string().min(1),
@@ -42,6 +48,7 @@ const CreateFlagSchema = z.object({
 	type: z.nativeEnum(FeatureFlagType).optional(),
 	environments: z.array(EnvironmentConfigSchema).optional(),
 	userTargets: z.array(UserTargetSchema).optional(),
+	segmentTargets: z.array(SegmentTargetSchema).optional(),
 });
 
 const UpdateFlagSchema = z.object({
@@ -51,6 +58,7 @@ const UpdateFlagSchema = z.object({
 	type: z.nativeEnum(FeatureFlagType).optional(),
 	environments: z.array(EnvironmentConfigSchema).optional(),
 	userTargets: z.array(UserTargetSchema).optional(),
+	segmentTargets: z.array(SegmentTargetSchema).optional(),
 });
 
 export const flagsRoute = new Hono<{
@@ -127,6 +135,9 @@ flagsRoute.post("/", async (c) => {
 
 		if (parsed.data.userTargets && parsed.data.userTargets.length > 0) {
 			await upsertUserTargets(created.id, parsed.data.userTargets);
+		}
+		if (parsed.data.segmentTargets && parsed.data.segmentTargets.length > 0) {
+			await upsertSegmentTargets(created.id, parsed.data.segmentTargets);
 		}
 
 		await logFlagChange({
@@ -267,6 +278,9 @@ flagsRoute.patch("/:key", async (c) => {
 		if (parsed.data.userTargets) {
 			await replaceUserTargets(updated.id, parsed.data.userTargets);
 		}
+		if (parsed.data.segmentTargets) {
+			await replaceSegmentTargets(updated.id, parsed.data.segmentTargets);
+		}
 
 		const after = await fetchFlagWithRelations(key);
 
@@ -337,6 +351,9 @@ const fetchFlagWithRelations = (key: string) => {
 			environments: {
 				include: {
 					userTargets: true,
+					segmentTargets: {
+						orderBy: { createdAt: "asc" },
+					},
 				},
 			},
 			auditLogs: {
@@ -380,6 +397,39 @@ const upsertUserTargets = async (
 	});
 };
 
+const upsertSegmentTargets = async (
+	flagId: string,
+	segmentTargets: z.infer<typeof SegmentTargetSchema>[],
+) => {
+	const envs = await prisma.featureFlagEnvironment.findMany({
+		where: { flagId },
+	});
+	const envMap = new Map(envs.map((env) => [env.environment, env.id]));
+
+	const targetsToCreate = segmentTargets
+		.map((target) => {
+			const envId = envMap.get(target.environment);
+			if (!envId) return null;
+			return {
+				flagEnvironmentId: envId,
+				segment: target.segment.trim().toLowerCase(),
+				include: target.include,
+			};
+		})
+		.filter(Boolean) as {
+		flagEnvironmentId: string;
+		segment: string;
+		include: boolean;
+	}[];
+
+	if (targetsToCreate.length === 0) return;
+
+	await prisma.featureFlagSegmentTarget.createMany({
+		data: targetsToCreate,
+		skipDuplicates: true,
+	});
+};
+
 const replaceUserTargets = async (
 	flagId: string,
 	userTargets: z.infer<typeof UserTargetSchema>[],
@@ -416,20 +466,68 @@ const replaceUserTargets = async (
 	]);
 };
 
+const replaceSegmentTargets = async (
+	flagId: string,
+	segmentTargets: z.infer<typeof SegmentTargetSchema>[],
+) => {
+	const envs = await prisma.featureFlagEnvironment.findMany({
+		where: { flagId },
+	});
+	const envMap = new Map(envs.map((env) => [env.environment, env.id]));
+	const validEnvIds = Array.from(envMap.values());
+
+	await prisma.$transaction([
+		prisma.featureFlagSegmentTarget.deleteMany({
+			where: { flagEnvironmentId: { in: validEnvIds } },
+		}),
+		prisma.featureFlagSegmentTarget.createMany({
+			data: segmentTargets
+				.map((target) => {
+					const envId = envMap.get(target.environment);
+					if (!envId) return null;
+					return {
+						flagEnvironmentId: envId,
+						segment: target.segment.trim().toLowerCase(),
+						include: target.include,
+					};
+				})
+				.filter(Boolean) as {
+				flagEnvironmentId: string;
+				segment: string;
+				include: boolean;
+			}[],
+			skipDuplicates: true,
+		}),
+	]);
+};
+
 const handlePrismaError = (
 	error: unknown,
-): { status: number; body: { error: { code: string; message: string } } } | null => {
+): {
+	status: number;
+	body: { error: { code: string; message: string } };
+} | null => {
 	if (error instanceof Prisma.PrismaClientKnownRequestError) {
 		if (error.code === "P2002") {
 			return {
 				status: 409,
-				body: { error: { code: "conflict", message: "Flag with this key already exists" } },
+				body: {
+					error: {
+						code: "conflict",
+						message: "Flag with this key already exists",
+					},
+				},
 			};
 		}
 		if (error.code === "P2003" || error.code === "P2025") {
 			return {
 				status: 400,
-				body: { error: { code: "bad_request", message: "Invalid reference or missing record" } },
+				body: {
+					error: {
+						code: "bad_request",
+						message: "Invalid reference or missing record",
+					},
+				},
 			};
 		}
 	}

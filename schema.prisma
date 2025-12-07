@@ -65,6 +65,7 @@ model FeatureFlagEnvironment {
 
   flag            FeatureFlag             @relation(fields: [flagId], references: [id], onDelete: Cascade)
   userTargets     FeatureFlagUserTarget[]
+  segmentTargets  FeatureFlagSegmentTarget[]
 
   @@index([flagId])
   @@unique([flagId, environment])
@@ -85,6 +86,21 @@ model FeatureFlagUserTarget {
 
   @@index([flagEnvironmentId])
   @@unique([flagEnvironmentId, userId])
+}
+
+model FeatureFlagSegmentTarget {
+  /// Segment string that can be matched against incoming user segments (e.g. employee, phone-last4:1234).
+  id                String                     @id @default(cuid())
+  flagEnvironmentId String
+  segment           String
+  include           Boolean
+  createdAt         DateTime                  @default(now())
+
+  environment FeatureFlagEnvironment @relation(fields: [flagEnvironmentId], references: [id], onDelete: Cascade)
+
+  @@index([flagEnvironmentId])
+  @@index([segment])
+  @@unique([flagEnvironmentId, segment])
 }
 
 model FeatureFlagAuditLog {
