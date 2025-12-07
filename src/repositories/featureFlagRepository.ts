@@ -95,7 +95,7 @@ export const createFlag = async (data: CreateFeatureFlagInput) => {
 		include: { environments: true },
 	});
 
-	if (existing && existing.deletedAt) {
+	if (existing?.deletedAt) {
 		await prisma.featureFlagEnvironment.deleteMany({
 			where: { flagId: existing.id },
 		});
