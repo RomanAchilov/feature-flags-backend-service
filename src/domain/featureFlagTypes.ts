@@ -17,7 +17,6 @@ export type FeatureFlagWithEnvs = {
 	key: string;
 	name: string;
 	description?: string | null;
-	tags: string[];
 	type: string;
 	environments: Array<{
 		environment: Environment;

@@ -37,7 +37,6 @@ describe("evaluate route", () => {
 				key: "flag-1",
 				name: "Flag One",
 				description: null,
-				tags: [],
 				type: "BOOLEAN",
 				environments: [
 					{

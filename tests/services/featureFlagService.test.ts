@@ -10,7 +10,6 @@ const baseFlag: FeatureFlagWithEnvs = {
 	key: "flag-1",
 	name: "Test flag",
 	description: null,
-	tags: [],
 	type: "BOOLEAN",
 	environments: [
 		{

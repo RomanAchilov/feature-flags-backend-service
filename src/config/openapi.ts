@@ -26,7 +26,6 @@ const FeatureFlagSchema: SchemaObject = {
 		key: { type: "string" },
 		name: { type: "string" },
 		description: { type: ["string", "null"] },
-		tags: { type: "array", items: { type: "string" } },
 		type: { type: "string", enum: ["BOOLEAN", "ROLLOUT"] },
 		environments: {
 			type: "array",
@@ -111,7 +110,6 @@ export const openApiDocument: OpenAPIDocument = {
 						schema: { type: "string", enum: featureEnvironmentEnum },
 					},
 					{ name: "search", in: "query", schema: { type: "string" } },
-					{ name: "tag", in: "query", schema: { type: "string" } },
 					{
 						name: "page",
 						in: "query",

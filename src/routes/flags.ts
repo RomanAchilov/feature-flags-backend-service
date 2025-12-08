@@ -87,7 +87,6 @@ const CreateFlagSchema = z.object({
 		),
 	name: z.string().min(1),
 	description: z.string().nullable().optional(),
-	tags: z.array(z.string().min(1)).optional(),
 	type: z.nativeEnum(FeatureFlagType).optional(),
 	environments: z.array(EnvironmentConfigSchema).optional(),
 	userTargets: z.array(UserTargetSchema).optional(),
@@ -98,7 +97,6 @@ const UpdateFlagSchema = z
 	.object({
 		name: z.string().min(1).optional(),
 		description: z.string().nullable().optional(),
-		tags: z.array(z.string().min(1)).optional(),
 		type: z.nativeEnum(FeatureFlagType).optional(),
 		environments: z.array(EnvironmentConfigSchema).nonempty().optional(),
 		userTargets: z.array(UserTargetSchema).optional(),
@@ -108,7 +106,6 @@ const UpdateFlagSchema = z
 		(data) =>
 			data.name !== undefined ||
 			data.description !== undefined ||
-			data.tags !== undefined ||
 			data.type !== undefined ||
 			data.environments !== undefined ||
 			data.userTargets !== undefined ||
@@ -149,7 +146,6 @@ const logMutation = (
 flagsRoute.get("/", async (c) => {
 	const environment = c.req.query("environment");
 	const search = c.req.query("search") ?? undefined;
-	const tag = c.req.query("tag") ?? undefined;
 	const page = Number.parseInt(c.req.query("page") ?? "1", 10);
 	const pageSize = Number.parseInt(c.req.query("pageSize") ?? "20", 10);
 
@@ -175,7 +171,6 @@ flagsRoute.get("/", async (c) => {
 		const flags = await listFlags({
 			environment: envFilter,
 			search,
-			tag,
 			skip,
 			take,
 		});
@@ -715,7 +710,6 @@ const fetchFlagWithRelations = async (
 					key: true,
 					name: true,
 					description: true,
-					tags: true,
 					type: true,
 					createdAt: true,
 					updatedAt: true,
@@ -725,6 +719,7 @@ const fetchFlagWithRelations = async (
 			if (!minimal) return null;
 			return {
 				...minimal,
+				tags: [],
 				environments: [] as FlagWithRelations["environments"],
 				auditLogs: [] as FlagWithRelations["auditLogs"],
 			} satisfies FlagWithRelations;

@@ -19,7 +19,6 @@ export type CreateFeatureFlagInput = {
 	key: string;
 	name: string;
 	description?: string | null;
-	tags?: string[];
 	type?: FeatureFlagType;
 	environments?: EnvironmentConfigInput[];
 };
@@ -27,7 +26,6 @@ export type CreateFeatureFlagInput = {
 export type UpdateFeatureFlagInput = {
 	name?: string;
 	description?: string | null;
-	tags?: string[];
 	type?: FeatureFlagType;
 	environments?: EnvironmentConfigInput[];
 };
@@ -52,13 +50,12 @@ export const listFlags = async (
 	options?: {
 		environment?: FeatureEnvironment;
 		search?: string;
-		tag?: string;
 		skip?: number;
 		take?: number;
 	},
 	prismaClient: PrismaClientOrTransaction = prisma,
 ) => {
-	const { environment, search, tag, skip, take } = options ?? {};
+	const { environment, search, skip, take } = options ?? {};
 	const client = prismaClient ?? prisma;
 
 	const where: Prisma.FeatureFlagWhereInput = {
@@ -71,7 +68,6 @@ export const listFlags = async (
 					],
 				}
 			: undefined),
-		...(tag ? { tags: { has: tag } } : undefined),
 	};
 
 	return client.featureFlag.findMany({
@@ -122,7 +118,7 @@ export const createFlag = async (
 				deletedAt: null,
 				name: data.name,
 				description: data.description ?? null,
-				tags: data.tags ?? [],
+				tags: [],
 				type: data.type ?? FeatureFlagType.BOOLEAN,
 				environments: {
 					create: environments.map((env) => ({
@@ -143,7 +139,7 @@ export const createFlag = async (
 			key: data.key,
 			name: data.name,
 			description: data.description ?? null,
-			tags: data.tags ?? [],
+			tags: [],
 			type: data.type ?? FeatureFlagType.BOOLEAN,
 			environments: {
 				create: environments.map((env) => ({
@@ -181,7 +177,6 @@ export const updateFlagByKey = async (
 		...(data.description !== undefined
 			? { description: data.description }
 			: undefined),
-		...(data.tags !== undefined ? { tags: data.tags } : undefined),
 		...(data.type !== undefined ? { type: data.type } : undefined),
 	};
 

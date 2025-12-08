@@ -70,7 +70,6 @@ evaluateRoute.post("/", async (c) => {
 				key: flag.key,
 				name: flag.name,
 				description: flag.description,
-				tags: flag.tags,
 				type: flag.type,
 				environments: flag.environments.map((env) => ({
 					environment: env.environment as Environment,

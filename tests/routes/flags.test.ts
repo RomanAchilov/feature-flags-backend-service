@@ -97,7 +97,6 @@ const sampleFlag = {
 	key: "flag-1",
 	name: "My Flag",
 	description: null,
-	tags: ["beta"],
 	type: FeatureFlagType.BOOLEAN,
 	environments: [
 		{
@@ -164,7 +163,6 @@ describe("flags route", () => {
 		expect(listFlagsMock).toHaveBeenCalledWith({
 			environment: FeatureEnvironment.production,
 			search: undefined,
-			tag: undefined,
 			skip: 0,
 			take: 5,
 		});
@@ -189,7 +187,6 @@ describe("flags route", () => {
 				key: "flag-1",
 				name: "My Flag",
 				description: null,
-				tags: ["beta"],
 			}),
 			headers: { "content-type": "application/json" },
 		});
