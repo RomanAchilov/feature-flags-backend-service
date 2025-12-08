@@ -105,7 +105,8 @@ describe("evaluateFeatureFlag", () => {
 		const targeted = buildFlag({
 			enabled: false,
 			segmentTargets: [
-				{ segment: "phone-last4:1234", include: true },
+				{ segment: "phone-prefix3:555", include: true },
+				{ segment: "phone-last2:44", include: true },
 				{ segment: "birthdate:1990-01-01", include: true },
 			],
 		});
@@ -113,10 +114,22 @@ describe("evaluateFeatureFlag", () => {
 		expect(
 			evaluateFeatureFlag(targeted, "production", {
 				id: "user-001",
-				phoneNumber: "+1 (555) 001234",
+				phoneNumber: "+7 (555) 001-23-44",
 				birthDate: "1990-01-01",
 			}),
 		).toBe(true);
+
+		const excluded = buildFlag({
+			enabled: true,
+			segmentTargets: [{ segment: "phone-last2:44", include: false }],
+		});
+
+		expect(
+			evaluateFeatureFlag(excluded, "production", {
+				id: "user-002",
+				phoneNumber: "+7 (555) 001-23-44",
+			}),
+		).toBe(false);
 	});
 
 	it("derives employee and new customer segments from booleans", () => {

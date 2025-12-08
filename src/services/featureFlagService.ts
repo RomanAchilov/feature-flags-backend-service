@@ -36,6 +36,18 @@ export const buildUserSegments = (user: UserContext): string[] => {
 		const digits = normalizeDigits(phone);
 		if (digits) {
 			segments.add(`phone:${digits}`);
+			if (digits.length >= 2) {
+				segments.add(`phone-last2:${digits.slice(-2)}`);
+			}
+			if (digits.length >= 3) {
+				const prefix =
+					digits.startsWith("7") && digits.length >= 4
+						? digits.slice(1, 4)
+						: digits.slice(0, 3);
+				if (prefix.length === 3) {
+					segments.add(`phone-prefix3:${prefix}`);
+				}
+			}
 			if (digits.length >= 4) {
 				segments.add(`phone-last4:${digits.slice(-4)}`);
 			}
