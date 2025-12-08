@@ -20,13 +20,49 @@ import {
 	updateFlagByKey,
 } from "../repositories/featureFlagRepository";
 
-const EnvironmentConfigSchema = z.object({
-	environment: z.nativeEnum(FeatureEnvironment),
-	enabled: z.boolean().optional(),
-	rolloutPercentage: z.number().min(0).max(100).nullable().optional(),
-	forceEnabled: z.boolean().nullable().optional(),
-	forceDisabled: z.boolean().nullable().optional(),
-});
+type PrismaClientOrTransaction = Prisma.TransactionClient | typeof prisma;
+type MutationKind = "create" | "update" | "delete";
+type MutationStatus = "start" | "success" | "error";
+type FlagWithRelations = Prisma.FeatureFlagGetPayload<{
+	include: typeof flagWithRelationsInclude;
+}>;
+
+const flagWithRelationsInclude = {
+	environments: {
+		include: {
+			userTargets: true,
+			segmentTargets: {
+				orderBy: { createdAt: "asc" },
+			},
+		},
+	},
+	auditLogs: {
+		orderBy: { timestamp: "desc" },
+		take: 5,
+	},
+} satisfies Prisma.FeatureFlagInclude;
+
+const FlagKeySchema = z
+	.string()
+	.min(1)
+	.max(128)
+	.regex(
+		/^[a-zA-Z0-9._-]+$/,
+		"Key must contain only letters, numbers, dot, underscore, or dash",
+	);
+
+const EnvironmentConfigSchema = z
+	.object({
+		environment: z.nativeEnum(FeatureEnvironment),
+		enabled: z.boolean().optional(),
+		rolloutPercentage: z.number().min(0).max(100).nullable().optional(),
+		forceEnabled: z.boolean().nullable().optional(),
+		forceDisabled: z.boolean().nullable().optional(),
+	})
+	.refine((env) => !(env.forceEnabled && env.forceDisabled), {
+		message: "forceEnabled and forceDisabled cannot both be true",
+		path: ["forceEnabled"],
+	});
 
 const UserTargetSchema = z.object({
 	environment: z.nativeEnum(FeatureEnvironment),
@@ -41,7 +77,14 @@ const SegmentTargetSchema = z.object({
 });
 
 const CreateFlagSchema = z.object({
-	key: z.string().min(1),
+	key: z
+		.string()
+		.min(1)
+		.max(128)
+		.regex(
+			/^[a-zA-Z0-9._-]+$/,
+			"Key must contain only letters, numbers, dot, underscore, or dash",
+		),
 	name: z.string().min(1),
 	description: z.string().nullable().optional(),
 	tags: z.array(z.string().min(1)).optional(),
@@ -51,19 +94,57 @@ const CreateFlagSchema = z.object({
 	segmentTargets: z.array(SegmentTargetSchema).optional(),
 });
 
-const UpdateFlagSchema = z.object({
-	name: z.string().min(1).optional(),
-	description: z.string().nullable().optional(),
-	tags: z.array(z.string().min(1)).optional(),
-	type: z.nativeEnum(FeatureFlagType).optional(),
-	environments: z.array(EnvironmentConfigSchema).optional(),
-	userTargets: z.array(UserTargetSchema).optional(),
-	segmentTargets: z.array(SegmentTargetSchema).optional(),
+const UpdateFlagSchema = z
+	.object({
+		name: z.string().min(1).optional(),
+		description: z.string().nullable().optional(),
+		tags: z.array(z.string().min(1)).optional(),
+		type: z.nativeEnum(FeatureFlagType).optional(),
+		environments: z.array(EnvironmentConfigSchema).nonempty().optional(),
+		userTargets: z.array(UserTargetSchema).optional(),
+		segmentTargets: z.array(SegmentTargetSchema).optional(),
+	})
+	.refine(
+		(data) =>
+			data.name !== undefined ||
+			data.description !== undefined ||
+			data.tags !== undefined ||
+			data.type !== undefined ||
+			data.environments !== undefined ||
+			data.userTargets !== undefined ||
+			data.segmentTargets !== undefined,
+		{
+			message: "At least one field must be provided",
+			path: [],
+		},
+	);
+
+const ToggleEnvironmentSchema = z.object({
+	enabled: z.boolean(),
 });
 
 export const flagsRoute = new Hono<{
 	Variables: { currentUser: CurrentUser };
 }>();
+
+const logMutation = (
+	kind: MutationKind,
+	key: string,
+	status: MutationStatus,
+	meta: Record<string, unknown> = {},
+) => {
+	const payload = {
+		mutation: kind,
+		key,
+		status,
+		...meta,
+	};
+	if (status === "error") {
+		console.error("[flags]", payload);
+	} else {
+		console.info("[flags]", payload);
+	}
+};
 
 flagsRoute.get("/", async (c) => {
 	const environment = c.req.query("environment");
@@ -131,26 +212,51 @@ flagsRoute.post("/", async (c) => {
 	const currentUser = c.get("currentUser");
 
 	try {
-		const created = await createFlag(parsed.data);
+		logMutation("create", parsed.data.key, "start");
+		const createdFlag = await prisma.$transaction(
+			async (tx) => {
+				const created = await createFlag(parsed.data, tx);
 
-		if (parsed.data.userTargets && parsed.data.userTargets.length > 0) {
-			await upsertUserTargets(created.id, parsed.data.userTargets);
-		}
-		if (parsed.data.segmentTargets && parsed.data.segmentTargets.length > 0) {
-			await upsertSegmentTargets(created.id, parsed.data.segmentTargets);
-		}
+				if (parsed.data.userTargets && parsed.data.userTargets.length > 0) {
+					await upsertUserTargets(created.id, parsed.data.userTargets, tx);
+				}
+				if (
+					parsed.data.segmentTargets &&
+					parsed.data.segmentTargets.length > 0
+				) {
+					await upsertSegmentTargets(
+						created.id,
+						parsed.data.segmentTargets,
+						tx,
+					);
+				}
 
-		await logFlagChange({
-			flagId: created.id,
-			action: FeatureFlagAuditAction.create,
-			changedBy: currentUser.id ?? "system",
-			before: null,
-			after: created,
-		});
+				await logFlagChange(
+					{
+						flagId: created.id,
+						action: FeatureFlagAuditAction.create,
+						changedBy: currentUser.id ?? "system",
+						before: null,
+						after: created,
+					},
+					tx,
+				);
 
-		const full = await fetchFlagWithRelations(created.key);
-		return c.json({ data: full }, 201);
+				const hydrated = await fetchFlagWithRelations(created.key, tx);
+				if (!hydrated) {
+					throw new Error("Created flag could not be loaded");
+				}
+				return hydrated;
+			},
+			{ timeout: 15000 },
+		);
+
+		logMutation("create", parsed.data.key, "success");
+		return c.json({ data: createdFlag }, 201);
 	} catch (error) {
+		logMutation("create", parsed.data.key, "error", {
+			message: error instanceof Error ? error.message : String(error),
+		});
 		console.error("Failed to create flag", error);
 		const handled = handlePrismaError(error);
 		if (handled) return c.json(handled.body, handled.status as 409 | 400);
@@ -162,9 +268,24 @@ flagsRoute.post("/", async (c) => {
 });
 
 flagsRoute.get("/:key", async (c) => {
-	const { key } = c.req.param();
+	const keyParsed = FlagKeySchema.safeParse(c.req.param("key"));
+	if (!keyParsed.success) {
+		return c.json(
+			{
+				error: {
+					code: "bad_request",
+					message: "Invalid flag key",
+					details: keyParsed.error.flatten(),
+				},
+			},
+			400,
+		);
+	}
+	const key = keyParsed.data;
 	try {
-		const flag = await fetchFlagWithRelations(key);
+		const flag = await fetchFlagWithRelations(key, prisma, {
+			allowFallback: true,
+		});
 		if (!flag) {
 			return c.json(
 				{ error: { code: "not_found", message: "Flag not found" } },
@@ -182,7 +303,20 @@ flagsRoute.get("/:key", async (c) => {
 });
 
 flagsRoute.get("/:key/audit", async (c) => {
-	const { key } = c.req.param();
+	const keyParsed = FlagKeySchema.safeParse(c.req.param("key"));
+	if (!keyParsed.success) {
+		return c.json(
+			{
+				error: {
+					code: "bad_request",
+					message: "Invalid flag key",
+					details: keyParsed.error.flatten(),
+				},
+			},
+			400,
+		);
+	}
+	const key = keyParsed.data;
 	const pageParam = c.req.query("page") ?? "1";
 	const pageSizeParam = c.req.query("pageSize") ?? "20";
 
@@ -239,10 +373,168 @@ flagsRoute.get("/:key/audit", async (c) => {
 	}
 });
 
+flagsRoute.patch("/:key/environments/:environment", async (c) => {
+	const keyParsed = FlagKeySchema.safeParse(c.req.param("key"));
+	if (!keyParsed.success) {
+		return c.json(
+			{
+				error: {
+					code: "bad_request",
+					message: "Invalid flag key",
+					details: keyParsed.error.flatten(),
+				},
+			},
+			400,
+		);
+	}
+	const environmentParsed = z
+		.nativeEnum(FeatureEnvironment)
+		.safeParse(c.req.param("environment"));
+	if (!environmentParsed.success) {
+		return c.json(
+			{
+				error: {
+					code: "bad_request",
+					message: "Invalid environment",
+					details: environmentParsed.error.flatten(),
+				},
+			},
+			400,
+		);
+	}
+	const body = await c.req.json().catch(() => null);
+	const parsed = ToggleEnvironmentSchema.safeParse(body);
+	const startedAt = Date.now();
+	if (!parsed.success) {
+		return c.json(
+			{
+				error: {
+					code: "bad_request",
+					message: "Invalid body",
+					details: parsed.error.flatten(),
+				},
+			},
+			400,
+		);
+	}
+	const key = keyParsed.data;
+	const targetEnv = environmentParsed.data;
+	const currentUser = c.get("currentUser");
+
+	try {
+		logMutation("update", key, "start", {
+			env: targetEnv,
+			enabled: parsed.data.enabled,
+			user: currentUser.id,
+			mode: "env-toggle",
+		});
+
+		const result = await prisma.$transaction(
+			async (tx) => {
+				const flag = await tx.featureFlag.findFirst({
+					where: { key, deletedAt: null },
+					select: {
+						id: true,
+						key: true,
+						environments: {
+							where: { environment: targetEnv },
+							select: { id: true, environment: true, enabled: true },
+						},
+					},
+				});
+
+				if (!flag || flag.environments.length === 0) {
+					return null;
+				}
+
+				const env = flag.environments[0];
+				const updatedEnv = await tx.featureFlagEnvironment.update({
+					where: { id: env.id },
+					data: { enabled: parsed.data.enabled },
+					select: { id: true, environment: true, enabled: true },
+				});
+
+				await logFlagChange(
+					{
+						flagId: flag.id,
+						action: FeatureFlagAuditAction.update,
+						changedBy: currentUser.id ?? "system",
+						before: { environment: env.environment, enabled: env.enabled },
+						after: {
+							environment: updatedEnv.environment,
+							enabled: updatedEnv.enabled,
+						},
+					},
+					tx,
+				);
+
+				return {
+					key: flag.key,
+					environment: updatedEnv.environment,
+					enabled: updatedEnv.enabled,
+				};
+			},
+			{ timeout: 10000 },
+		);
+
+		if (!result) {
+			return c.json(
+				{
+					error: {
+						code: "not_found",
+						message: "Flag or environment not found",
+					},
+				},
+				404,
+			);
+		}
+
+		logMutation("update", key, "success", {
+			mode: "env-toggle",
+			env: targetEnv,
+			elapsedMs: Date.now() - startedAt,
+		});
+
+		return c.json({ data: result });
+	} catch (error) {
+		logMutation("update", key, "error", {
+			mode: "env-toggle",
+			env: targetEnv,
+			elapsedMs: Date.now() - startedAt,
+		});
+		console.error("Failed to toggle environment", error);
+		const handled = handlePrismaError(error);
+		if (handled) return c.json(handled.body, handled.status as 409 | 400);
+		return c.json(
+			{
+				error: {
+					code: "internal_error",
+					message: "Failed to toggle environment",
+				},
+			},
+			500,
+		);
+	}
+});
+
 flagsRoute.patch("/:key", async (c) => {
-	const { key } = c.req.param();
+	const keyParsed = FlagKeySchema.safeParse(c.req.param("key"));
+	if (!keyParsed.success) {
+		return c.json(
+			{
+				error: {
+					code: "bad_request",
+					message: "Invalid flag key",
+					details: keyParsed.error.flatten(),
+				},
+			},
+			400,
+		);
+	}
+	const key = keyParsed.data;
 	const body = await c.req.json().catch(() => null);
 	const parsed = UpdateFlagSchema.safeParse(body);
+	const startedAt = Date.now();
 	if (!parsed.success) {
 		return c.json(
 			{
@@ -259,41 +551,82 @@ flagsRoute.patch("/:key", async (c) => {
 	const currentUser = c.get("currentUser");
 
 	try {
-		const before = await fetchFlagWithRelations(key);
-		if (!before) {
-			return c.json(
-				{ error: { code: "not_found", message: "Flag not found" } },
-				404,
-			);
-		}
-
-		const updated = await updateFlagByKey(key, parsed.data);
-		if (!updated) {
-			return c.json(
-				{ error: { code: "not_found", message: "Flag not found" } },
-				404,
-			);
-		}
-
-		if (parsed.data.userTargets) {
-			await replaceUserTargets(updated.id, parsed.data.userTargets);
-		}
-		if (parsed.data.segmentTargets) {
-			await replaceSegmentTargets(updated.id, parsed.data.segmentTargets);
-		}
-
-		const after = await fetchFlagWithRelations(key);
-
-		await logFlagChange({
-			flagId: updated.id,
-			action: FeatureFlagAuditAction.update,
-			changedBy: currentUser.id ?? "system",
-			before,
-			after,
+		logMutation("update", key, "start", {
+			user: currentUser.id,
+			envs: parsed.data.environments?.length ?? 0,
+			userTargets: parsed.data.userTargets?.length ?? 0,
+			segmentTargets: parsed.data.segmentTargets?.length ?? 0,
 		});
+		const after = await prisma.$transaction(
+			async (tx) => {
+				const before = await fetchFlagWithRelations(key, tx, {
+					allowFallback: true,
+					fallbackClient: prisma,
+				});
+				if (!before) return null;
 
+				const updated = await updateFlagByKey(
+					key,
+					parsed.data,
+					tx,
+					flagWithRelationsInclude,
+				);
+				if (!updated) return null;
+
+				const hasTargetUpdates =
+					Boolean(parsed.data.userTargets) ||
+					Boolean(parsed.data.segmentTargets);
+
+				if (parsed.data.userTargets) {
+					await replaceUserTargets(updated.id, parsed.data.userTargets, tx);
+				}
+				if (parsed.data.segmentTargets) {
+					await replaceSegmentTargets(
+						updated.id,
+						parsed.data.segmentTargets,
+						tx,
+					);
+				}
+
+				const hydrated = hasTargetUpdates
+					? await fetchFlagWithRelations(key, tx, {
+							allowFallback: true,
+							fallbackClient: prisma,
+						})
+					: updated;
+				if (!hydrated) return null;
+
+				await logFlagChange(
+					{
+						flagId: updated.id,
+						action: FeatureFlagAuditAction.update,
+						changedBy: currentUser.id ?? "system",
+						before,
+						after: hydrated,
+					},
+					tx,
+				);
+
+				return hydrated;
+			},
+			{ timeout: 15000 },
+		);
+
+		if (!after) {
+			return c.json(
+				{ error: { code: "not_found", message: "Flag not found" } },
+				404,
+			);
+		}
+
+		logMutation("update", key, "success", {
+			elapsedMs: Date.now() - startedAt,
+		});
 		return c.json({ data: after });
 	} catch (error) {
+		logMutation("update", key, "error", {
+			elapsedMs: Date.now() - startedAt,
+		});
 		console.error("Failed to update flag", error);
 		const handled = handlePrismaError(error);
 		if (handled) return c.json(handled.body, handled.status as 409 | 400);
@@ -305,7 +638,20 @@ flagsRoute.patch("/:key", async (c) => {
 });
 
 flagsRoute.delete("/:key", async (c) => {
-	const { key } = c.req.param();
+	const keyParsed = FlagKeySchema.safeParse(c.req.param("key"));
+	if (!keyParsed.success) {
+		return c.json(
+			{
+				error: {
+					code: "bad_request",
+					message: "Invalid flag key",
+					details: keyParsed.error.flatten(),
+				},
+			},
+			400,
+		);
+	}
+	const key = keyParsed.data;
 	const currentUser = c.get("currentUser");
 
 	try {
@@ -344,31 +690,56 @@ flagsRoute.delete("/:key", async (c) => {
 	}
 });
 
-const fetchFlagWithRelations = (key: string) => {
-	return prisma.featureFlag.findFirst({
-		where: { key, deletedAt: null },
-		include: {
-			environments: {
-				include: {
-					userTargets: true,
-					segmentTargets: {
-						orderBy: { createdAt: "asc" },
-					},
+const fetchFlagWithRelations = async (
+	key: string,
+	prismaClient: PrismaClientOrTransaction = prisma,
+	options?: { allowFallback?: boolean; fallbackClient?: typeof prisma },
+): Promise<FlagWithRelations | null> => {
+	const client = prismaClient ?? prisma;
+	const fallbackClient = options?.fallbackClient ?? prisma;
+	try {
+		return await client.featureFlag.findFirst({
+			where: { key, deletedAt: null },
+			include: flagWithRelationsInclude,
+		});
+	} catch (error) {
+		if (options?.allowFallback) {
+			console.warn(
+				"Failed to load flag with relations, falling back to minimal select",
+				error,
+			);
+			const minimal = await fallbackClient.featureFlag.findFirst({
+				where: { key, deletedAt: null },
+				select: {
+					id: true,
+					key: true,
+					name: true,
+					description: true,
+					tags: true,
+					type: true,
+					createdAt: true,
+					updatedAt: true,
+					deletedAt: true,
 				},
-			},
-			auditLogs: {
-				orderBy: { timestamp: "desc" },
-				take: 5,
-			},
-		},
-	});
+			});
+			if (!minimal) return null;
+			return {
+				...minimal,
+				environments: [] as FlagWithRelations["environments"],
+				auditLogs: [] as FlagWithRelations["auditLogs"],
+			} satisfies FlagWithRelations;
+		}
+		throw error;
+	}
 };
 
 const upsertUserTargets = async (
 	flagId: string,
 	userTargets: z.infer<typeof UserTargetSchema>[],
+	prismaClient: PrismaClientOrTransaction = prisma,
 ) => {
-	const envs = await prisma.featureFlagEnvironment.findMany({
+	const client = prismaClient ?? prisma;
+	const envs = await client.featureFlagEnvironment.findMany({
 		where: { flagId },
 	});
 	const envMap = new Map(envs.map((env) => [env.environment, env.id]));
@@ -391,7 +762,7 @@ const upsertUserTargets = async (
 
 	if (targetsToCreate.length === 0) return;
 
-	await prisma.featureFlagUserTarget.createMany({
+	await client.featureFlagUserTarget.createMany({
 		data: targetsToCreate,
 		skipDuplicates: true,
 	});
@@ -400,8 +771,10 @@ const upsertUserTargets = async (
 const upsertSegmentTargets = async (
 	flagId: string,
 	segmentTargets: z.infer<typeof SegmentTargetSchema>[],
+	prismaClient: PrismaClientOrTransaction = prisma,
 ) => {
-	const envs = await prisma.featureFlagEnvironment.findMany({
+	const client = prismaClient ?? prisma;
+	const envs = await client.featureFlagEnvironment.findMany({
 		where: { flagId },
 	});
 	const envMap = new Map(envs.map((env) => [env.environment, env.id]));
@@ -424,7 +797,7 @@ const upsertSegmentTargets = async (
 
 	if (targetsToCreate.length === 0) return;
 
-	await prisma.featureFlagSegmentTarget.createMany({
+	await client.featureFlagSegmentTarget.createMany({
 		data: targetsToCreate,
 		skipDuplicates: true,
 	});
@@ -433,72 +806,80 @@ const upsertSegmentTargets = async (
 const replaceUserTargets = async (
 	flagId: string,
 	userTargets: z.infer<typeof UserTargetSchema>[],
+	prismaClient: PrismaClientOrTransaction = prisma,
 ) => {
-	const envs = await prisma.featureFlagEnvironment.findMany({
+	const client = prismaClient ?? prisma;
+	const envs = await client.featureFlagEnvironment.findMany({
 		where: { flagId },
 	});
 	const envMap = new Map(envs.map((env) => [env.environment, env.id]));
 	const validEnvIds = Array.from(envMap.values());
+	const targetsToCreate = userTargets
+		.map((target) => {
+			const envId = envMap.get(target.environment);
+			if (!envId) return null;
+			return {
+				flagEnvironmentId: envId,
+				userId: target.userId,
+				include: target.include,
+			};
+		})
+		.filter(Boolean) as {
+		flagEnvironmentId: string;
+		userId: string;
+		include: boolean;
+	}[];
 
 	// Replace all targets for the flag (per environment) with provided set to keep state in sync.
-	await prisma.$transaction([
-		prisma.featureFlagUserTarget.deleteMany({
-			where: { flagEnvironmentId: { in: validEnvIds } },
-		}),
-		prisma.featureFlagUserTarget.createMany({
-			data: userTargets
-				.map((target) => {
-					const envId = envMap.get(target.environment);
-					if (!envId) return null;
-					return {
-						flagEnvironmentId: envId,
-						userId: target.userId,
-						include: target.include,
-					};
-				})
-				.filter(Boolean) as {
-				flagEnvironmentId: string;
-				userId: string;
-				include: boolean;
-			}[],
+	await client.featureFlagUserTarget.deleteMany({
+		where: { flagEnvironmentId: { in: validEnvIds } },
+	});
+
+	if (targetsToCreate.length > 0) {
+		await client.featureFlagUserTarget.createMany({
+			data: targetsToCreate,
 			skipDuplicates: true,
-		}),
-	]);
+		});
+	}
 };
 
 const replaceSegmentTargets = async (
 	flagId: string,
 	segmentTargets: z.infer<typeof SegmentTargetSchema>[],
+	prismaClient: PrismaClientOrTransaction = prisma,
 ) => {
-	const envs = await prisma.featureFlagEnvironment.findMany({
+	const client = prismaClient ?? prisma;
+	const envs = await client.featureFlagEnvironment.findMany({
 		where: { flagId },
 	});
 	const envMap = new Map(envs.map((env) => [env.environment, env.id]));
 	const validEnvIds = Array.from(envMap.values());
+	const targetsToCreate = segmentTargets
+		.map((target) => {
+			const envId = envMap.get(target.environment);
+			if (!envId) return null;
+			return {
+				flagEnvironmentId: envId,
+				segment: target.segment.trim().toLowerCase(),
+				include: target.include,
+			};
+		})
+		.filter(Boolean) as {
+		flagEnvironmentId: string;
+		segment: string;
+		include: boolean;
+	}[];
 
-	await prisma.$transaction([
-		prisma.featureFlagSegmentTarget.deleteMany({
-			where: { flagEnvironmentId: { in: validEnvIds } },
-		}),
-		prisma.featureFlagSegmentTarget.createMany({
-			data: segmentTargets
-				.map((target) => {
-					const envId = envMap.get(target.environment);
-					if (!envId) return null;
-					return {
-						flagEnvironmentId: envId,
-						segment: target.segment.trim().toLowerCase(),
-						include: target.include,
-					};
-				})
-				.filter(Boolean) as {
-				flagEnvironmentId: string;
-				segment: string;
-				include: boolean;
-			}[],
+	await client.featureFlagSegmentTarget.deleteMany({
+		where: { flagEnvironmentId: { in: validEnvIds } },
+	});
+
+	if (targetsToCreate.length > 0) {
+		await client.featureFlagSegmentTarget.createMany({
+			data: targetsToCreate,
 			skipDuplicates: true,
-		}),
-	]);
+		});
+	}
 };
 
 const handlePrismaError = (

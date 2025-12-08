@@ -39,6 +39,7 @@ vi.mock("../../src/db/prisma", () => ({
 		},
 		featureFlagEnvironment: {
 			findMany: vi.fn(),
+			update: vi.fn(),
 		},
 		featureFlagUserTarget: {
 			createMany: vi.fn(),
@@ -61,6 +62,7 @@ const prismaMock = prisma as unknown as {
 	};
 	featureFlagEnvironment: {
 		findMany: ReturnType<typeof vi.fn>;
+		update: ReturnType<typeof vi.fn>;
 	};
 	featureFlagUserTarget: {
 		createMany: ReturnType<typeof vi.fn>;
@@ -127,6 +129,7 @@ describe("flags route", () => {
 		vi.clearAllMocks();
 		prismaMock.featureFlag.findFirst.mockReset();
 		prismaMock.featureFlagEnvironment.findMany.mockReset();
+		prismaMock.featureFlagEnvironment.update.mockReset();
 		prismaMock.featureFlagUserTarget.createMany.mockReset();
 		prismaMock.featureFlagUserTarget.deleteMany.mockReset();
 		prismaMock.featureFlagSegmentTarget.createMany.mockReset();
@@ -140,6 +143,11 @@ describe("flags route", () => {
 		deleteFlagByKeyMock.mockReset();
 		logFlagChangeMock.mockReset();
 		getAuditLogForFlagMock.mockReset();
+
+		prismaMock.$transaction.mockImplementation(
+			async (callback: (client: typeof prismaMock) => unknown) =>
+				typeof callback === "function" ? callback(prismaMock) : undefined,
+		);
 	});
 
 	it("lists flags with optional filters", async () => {
@@ -189,13 +197,16 @@ describe("flags route", () => {
 
 		expect(res.status).toBe(201);
 		expect(body.data.key).toBe("flag-1");
-		expect(logFlagChangeMock).toHaveBeenCalledWith({
-			flagId: "flag-1",
-			action: FeatureFlagAuditAction.create,
-			changedBy: "tester",
-			before: null,
-			after: sampleFlag,
-		});
+		expect(logFlagChangeMock).toHaveBeenCalledWith(
+			{
+				flagId: "flag-1",
+				action: FeatureFlagAuditAction.create,
+				changedBy: "tester",
+				before: null,
+				after: sampleFlag,
+			},
+			expect.anything(),
+		);
 	});
 
 	it("returns 404 when flag is missing", async () => {
@@ -232,6 +243,64 @@ describe("flags route", () => {
 				flagId: "flag-1",
 				action: FeatureFlagAuditAction.update,
 			}),
+			expect.anything(),
+		);
+	});
+
+	it("rejects patch without any fields", async () => {
+		const app = createAppWithUser();
+		const res = await app.request("/flags/flag-1", {
+			method: "PATCH",
+			body: JSON.stringify({}),
+			headers: { "content-type": "application/json" },
+		});
+		const body = await res.json();
+
+		expect(res.status).toBe(400);
+		expect(body.error.code).toBe("bad_request");
+		expect(updateFlagByKeyMock).not.toHaveBeenCalled();
+	});
+
+	it("toggles environment enabled state via dedicated endpoint", async () => {
+		prismaMock.featureFlag.findFirst.mockResolvedValueOnce({
+			id: "flag-1",
+			key: "flag-1",
+			environments: [
+				{
+					id: "env-1",
+					environment: FeatureEnvironment.production,
+					enabled: false,
+				},
+			],
+		});
+		prismaMock.featureFlagEnvironment.update.mockResolvedValueOnce({
+			id: "env-1",
+			environment: FeatureEnvironment.production,
+			enabled: true,
+		});
+
+		const app = createAppWithUser();
+		const res = await app.request("/flags/flag-1/environments/production", {
+			method: "PATCH",
+			body: JSON.stringify({ enabled: true }),
+			headers: { "content-type": "application/json" },
+		});
+		const body = await res.json();
+
+		expect(res.status).toBe(200);
+		expect(body.data.enabled).toBe(true);
+		expect(prismaMock.featureFlagEnvironment.update).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: { id: "env-1" },
+				data: { enabled: true },
+			}),
+		);
+		expect(logFlagChangeMock).toHaveBeenCalledWith(
+			expect.objectContaining({
+				flagId: "flag-1",
+				action: FeatureFlagAuditAction.update,
+			}),
+			expect.anything(),
 		);
 	});
 

@@ -5,6 +5,8 @@ import {
 } from "@prisma/client";
 import { prisma } from "../db/prisma";
 
+type PrismaClientOrTransaction = Prisma.TransactionClient | typeof prisma;
+
 export type EnvironmentConfigInput = {
 	environment: FeatureEnvironment;
 	enabled?: boolean;
@@ -31,8 +33,13 @@ export type UpdateFeatureFlagInput = {
 };
 
 // Получить флаг по ключу; выбрасывает Prisma ошибки при проблемах с подключением.
-export const getFlagByKey = async (key: string) => {
-	return prisma.featureFlag.findFirst({
+export const getFlagByKey = async (
+	key: string,
+	prismaClient: PrismaClientOrTransaction = prisma,
+) => {
+	const client = prismaClient ?? prisma;
+
+	return client.featureFlag.findFirst({
 		where: { key, deletedAt: null },
 		include: {
 			environments: true,
@@ -41,14 +48,18 @@ export const getFlagByKey = async (key: string) => {
 };
 
 // Список флагов с фильтрами/пагинацией; может выбросить PrismaClientKnownRequestError при неверных параметрах.
-export const listFlags = async (options?: {
-	environment?: FeatureEnvironment;
-	search?: string;
-	tag?: string;
-	skip?: number;
-	take?: number;
-}) => {
+export const listFlags = async (
+	options?: {
+		environment?: FeatureEnvironment;
+		search?: string;
+		tag?: string;
+		skip?: number;
+		take?: number;
+	},
+	prismaClient: PrismaClientOrTransaction = prisma,
+) => {
 	const { environment, search, tag, skip, take } = options ?? {};
+	const client = prismaClient ?? prisma;
 
 	const where: Prisma.FeatureFlagWhereInput = {
 		deletedAt: null,
@@ -63,7 +74,7 @@ export const listFlags = async (options?: {
 		...(tag ? { tags: { has: tag } } : undefined),
 	};
 
-	return prisma.featureFlag.findMany({
+	return client.featureFlag.findMany({
 		where,
 		include: {
 			environments: environment
@@ -79,7 +90,12 @@ export const listFlags = async (options?: {
 };
 
 // Создать флаг с базовой конфигурацией по окружениям; может выбросить уникальный конфликт по ключу.
-export const createFlag = async (data: CreateFeatureFlagInput) => {
+export const createFlag = async (
+	data: CreateFeatureFlagInput,
+	prismaClient: PrismaClientOrTransaction = prisma,
+) => {
+	const client = prismaClient ?? prisma;
+
 	const defaultEnvironments: EnvironmentConfigInput[] = Object.values(
 		FeatureEnvironment,
 	).map((environment) => ({ environment }));
@@ -90,17 +106,17 @@ export const createFlag = async (data: CreateFeatureFlagInput) => {
 			: defaultEnvironments;
 
 	// If a soft-deleted flag with the same key exists, revive it instead of failing with unique conflict.
-	const existing = await prisma.featureFlag.findFirst({
+	const existing = await client.featureFlag.findFirst({
 		where: { key: data.key },
 		include: { environments: true },
 	});
 
 	if (existing?.deletedAt) {
-		await prisma.featureFlagEnvironment.deleteMany({
+		await client.featureFlagEnvironment.deleteMany({
 			where: { flagId: existing.id },
 		});
 
-		return prisma.featureFlag.update({
+		return client.featureFlag.update({
 			where: { id: existing.id },
 			data: {
 				deletedAt: null,
@@ -122,7 +138,7 @@ export const createFlag = async (data: CreateFeatureFlagInput) => {
 		});
 	}
 
-	return prisma.featureFlag.create({
+	return client.featureFlag.create({
 		data: {
 			key: data.key,
 			name: data.name,
@@ -147,8 +163,12 @@ export const createFlag = async (data: CreateFeatureFlagInput) => {
 export const updateFlagByKey = async (
 	key: string,
 	data: UpdateFeatureFlagInput,
+	prismaClient: PrismaClientOrTransaction = prisma,
+	include: Prisma.FeatureFlagInclude = { environments: true },
 ) => {
-	const existing = await prisma.featureFlag.findFirst({
+	const client = prismaClient ?? prisma;
+
+	const existing = await client.featureFlag.findFirst({
 		where: { key, deletedAt: null },
 	});
 
@@ -198,10 +218,10 @@ export const updateFlagByKey = async (
 		};
 	}
 
-	return prisma.featureFlag.update({
+	return client.featureFlag.update({
 		where: { id: existing.id },
 		data: updateData,
-		include: { environments: true },
+		include,
 	});
 };
 
