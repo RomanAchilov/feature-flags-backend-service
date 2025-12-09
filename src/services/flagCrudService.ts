@@ -27,9 +27,7 @@ import {
 } from "../utils/responses";
 import {
 	replaceSegmentTargets,
-	replaceUserTargets,
 	upsertSegmentTargets,
-	upsertUserTargets,
 } from "./flagTargetService";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -50,7 +48,7 @@ export const createFlagWithTargets = async (
 	input: CreateFlagInput,
 	userId: string,
 ): Promise<ServiceResult<FlagWithRelations>> => {
-	const { key, userTargets, segmentTargets, ...flagData } = input;
+	const { key, segmentTargets, ...flagData } = input;
 
 	try {
 		logMutation("create", key, "start");
@@ -59,9 +57,6 @@ export const createFlagWithTargets = async (
 			async (tx) => {
 				const created = await createFlag({ key, ...flagData }, tx);
 
-				if (userTargets && userTargets.length > 0) {
-					await upsertUserTargets(created.id, userTargets, tx);
-				}
 				if (segmentTargets && segmentTargets.length > 0) {
 					await upsertSegmentTargets(created.id, segmentTargets, tx);
 				}
@@ -133,14 +128,13 @@ export const updateFlagWithTargets = async (
 	input: UpdateFlagInput,
 	userId: string,
 ): Promise<ServiceResult<FlagWithRelations>> => {
-	const { userTargets, segmentTargets, ...updateData } = input;
+	const { segmentTargets, ...updateData } = input;
 	const timer = createTimer();
 
 	try {
 		logMutation("update", key, "start", {
 			user: userId,
 			envs: updateData.environments?.length ?? 0,
-			userTargets: userTargets?.length ?? 0,
 			segmentTargets: segmentTargets?.length ?? 0,
 		});
 
@@ -160,9 +154,6 @@ export const updateFlagWithTargets = async (
 				);
 				if (!updated) return null;
 
-				if (userTargets) {
-					await replaceUserTargets(updated.id, userTargets, tx);
-				}
 				if (segmentTargets) {
 					await replaceSegmentTargets(updated.id, segmentTargets, tx);
 				}

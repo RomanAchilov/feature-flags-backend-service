@@ -1,9 +1,6 @@
 import type { FeatureEnvironment, Prisma } from "@prisma/client";
 import { prisma } from "../db/prisma";
-import type {
-	SegmentTargetInput,
-	UserTargetInput,
-} from "../schemas/flag.schema";
+import type { SegmentTargetInput } from "../schemas/flag.schema";
 
 type PrismaClientOrTransaction = Prisma.TransactionClient | typeof prisma;
 
@@ -22,28 +19,6 @@ const getEnvironmentMap = async (
 		select: { id: true, environment: true },
 	});
 	return new Map(envs.map((env) => [env.environment, env.id]));
-};
-
-const mapUserTargetsToCreate = (
-	targets: UserTargetInput[],
-	envMap: EnvironmentMap,
-) => {
-	return targets
-		.map((target) => {
-			const envId = envMap.get(target.environment);
-			if (!envId) return null;
-			return {
-				flagEnvironmentId: envId,
-				userId: target.userId,
-				include: target.include,
-			};
-		})
-		.filter(
-			(
-				t,
-			): t is { flagEnvironmentId: string; userId: string; include: boolean } =>
-				t !== null,
-		);
 };
 
 const mapSegmentTargetsToCreate = (
@@ -76,25 +51,6 @@ const mapSegmentTargetsToCreate = (
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Добавляет user targets без удаления существующих (skipDuplicates).
- */
-export const upsertUserTargets = async (
-	flagId: string,
-	userTargets: UserTargetInput[],
-	client: PrismaClientOrTransaction = prisma,
-): Promise<void> => {
-	const envMap = await getEnvironmentMap(flagId, client);
-	const data = mapUserTargetsToCreate(userTargets, envMap);
-
-	if (data.length === 0) return;
-
-	await client.featureFlagUserTarget.createMany({
-		data,
-		skipDuplicates: true,
-	});
-};
-
-/**
  * Добавляет segment targets без удаления существующих (skipDuplicates).
  */
 export const upsertSegmentTargets = async (
@@ -111,32 +67,6 @@ export const upsertSegmentTargets = async (
 		data,
 		skipDuplicates: true,
 	});
-};
-
-/**
- * Полностью заменяет user targets для флага.
- * Удаляет все существующие и создаёт новые.
- */
-export const replaceUserTargets = async (
-	flagId: string,
-	userTargets: UserTargetInput[],
-	client: PrismaClientOrTransaction = prisma,
-): Promise<void> => {
-	const envMap = await getEnvironmentMap(flagId, client);
-	const envIds = Array.from(envMap.values());
-
-	// Удаляем все существующие targets для этого флага
-	await client.featureFlagUserTarget.deleteMany({
-		where: { flagEnvironmentId: { in: envIds } },
-	});
-
-	const data = mapUserTargetsToCreate(userTargets, envMap);
-	if (data.length > 0) {
-		await client.featureFlagUserTarget.createMany({
-			data,
-			skipDuplicates: true,
-		});
-	}
 };
 
 /**

@@ -26,7 +26,7 @@ const FeatureFlagSchema: SchemaObject = {
 		key: { type: "string" },
 		name: { type: "string" },
 		description: { type: ["string", "null"] },
-		type: { type: "string", enum: ["BOOLEAN", "ROLLOUT"] },
+		type: { type: "string", enum: ["BOOLEAN", "MULTIVARIANT"] },
 		environments: {
 			type: "array",
 			items: {
@@ -40,15 +40,13 @@ const FeatureFlagSchema: SchemaObject = {
 						minimum: 0,
 						maximum: 100,
 					},
-					forceEnabled: { type: ["boolean", "null"] },
-					forceDisabled: { type: ["boolean", "null"] },
-					userTargets: {
+					segmentTargets: {
 						type: "array",
 						items: {
 							type: "object",
-							required: ["userId", "include"],
+							required: ["segment", "include"],
 							properties: {
-								userId: { type: "string" },
+								segment: { type: "string" },
 								include: { type: "boolean" },
 							},
 						},

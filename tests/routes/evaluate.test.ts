@@ -43,9 +43,6 @@ describe("evaluate route", () => {
 						environment: "production",
 						enabled: true,
 						rolloutPercentage: null,
-						forceEnabled: null,
-						forceDisabled: null,
-						userTargets: [],
 						segmentTargets: [],
 					},
 				],
@@ -71,7 +68,6 @@ describe("evaluate route", () => {
 			include: {
 				environments: {
 					include: {
-						userTargets: true,
 						segmentTargets: { orderBy: { createdAt: "asc" } },
 					},
 				},

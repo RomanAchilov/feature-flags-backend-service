@@ -54,7 +54,6 @@ evaluateRoute.post("/", async (c) => {
 			include: {
 				environments: {
 					include: {
-						userTargets: true,
 						segmentTargets: {
 							orderBy: { createdAt: "asc" },
 						},
@@ -75,12 +74,6 @@ evaluateRoute.post("/", async (c) => {
 					environment: env.environment as Environment,
 					enabled: env.enabled,
 					rolloutPercentage: env.rolloutPercentage,
-					forceEnabled: env.forceEnabled,
-					forceDisabled: env.forceDisabled,
-					userTargets: env.userTargets.map((target) => ({
-						userId: target.userId,
-						include: target.include,
-					})),
 					segmentTargets:
 						env.segmentTargets?.map((target) => ({
 							segment: target.segment.toLowerCase(),

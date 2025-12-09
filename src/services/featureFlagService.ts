@@ -70,6 +70,16 @@ export const buildUserSegments = (user: UserContext): string[] => {
 	return Array.from(segments);
 };
 
+/**
+ * Evaluates whether a feature flag is enabled for a given user.
+ *
+ * Приоритет правил:
+ * 1. enabled=false → false (ГЛАВНЫЙ РУБИЛЬНИК - флаг выключен для всех)
+ * 2. segment exclude → false
+ * 3. segment include → true
+ * 4. rollout percentage → hash check
+ * 5. default: если есть include-правила → false (whitelist), иначе → true
+ */
 export function evaluateFeatureFlag(
 	flag: FeatureFlagWithEnvs,
 	environment: Environment,
@@ -84,38 +94,48 @@ export function evaluateFeatureFlag(
 		return false;
 	}
 
-	// Overrides take highest priority.
-	if (envConfig.forceEnabled === true) return true;
-	if (envConfig.forceDisabled === true) return false;
-
-	// User-specific targeting by userId.
-	const target = envConfig.userTargets.find((t) => t.userId === user.id);
-	if (target) {
-		return target.include;
+	// 1. Main switch - if disabled, flag is off for everyone.
+	// Это главный рубильник: выключен = выключен для всех.
+	if (!envConfig.enabled) {
+		return false;
 	}
 
-	// Segment targeting (derived and explicit).
+	// --- Далее enabled=true, применяем таргетинг ---
+
 	const userSegments = new Set(buildUserSegments(user));
-	const segmentTarget = envConfig.segmentTargets.find((t) =>
-		userSegments.has(t.segment.toLowerCase()),
+
+	// 2. Check segment excludes (высший приоритет)
+	const segmentExclude = envConfig.segmentTargets.find(
+		(t) => !t.include && userSegments.has(t.segment.toLowerCase()),
 	);
-	if (segmentTarget) {
-		return segmentTarget.include;
+	if (segmentExclude) return false;
+
+	// 3. Check segment includes
+	const hasIncludeSegments = envConfig.segmentTargets.some((t) => t.include);
+	if (hasIncludeSegments) {
+		const segmentInclude = envConfig.segmentTargets.find(
+			(t) => t.include && userSegments.has(t.segment.toLowerCase()),
+		);
+		if (segmentInclude) return true;
+		// User is not in any include segment - check rollout next
 	}
 
-	// Percentage rollout (deterministic).
+	// 4. Percentage rollout (deterministic).
 	if (
 		envConfig.rolloutPercentage !== null &&
 		envConfig.rolloutPercentage !== undefined
 	) {
 		const bucket = hashToPercentage(`${flag.key}:${user.id}`);
-		if (bucket < envConfig.rolloutPercentage) {
-			return true;
-		}
+		return bucket < envConfig.rolloutPercentage;
 	}
 
-	// Default to base enabled for the environment.
-	return envConfig.enabled;
+	// 5. Default: если есть include-сегменты, это whitelist - пользователь не в списке
+	if (hasIncludeSegments) {
+		return false;
+	}
+
+	// 6. Если нет никаких include-правил - флаг включен для всех
+	return true;
 }
 
 // Produces a number in [0, 100)

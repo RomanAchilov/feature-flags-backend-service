@@ -16,9 +16,6 @@ const baseFlag: FeatureFlagWithEnvs = {
 			environment: "production",
 			enabled: false,
 			rolloutPercentage: null,
-			forceEnabled: null,
-			forceDisabled: null,
-			userTargets: [],
 			segmentTargets: [],
 		},
 	],
@@ -32,148 +29,254 @@ const buildFlag = (
 });
 
 describe("evaluateFeatureFlag", () => {
-	it("returns false when environment configuration is missing", () => {
-		const flagWithoutEnv: FeatureFlagWithEnvs = {
-			...baseFlag,
-			environments: [],
-		};
+	describe("базовая логика", () => {
+		it("возвращает false если нет конфигурации окружения", () => {
+			const flagWithoutEnv: FeatureFlagWithEnvs = {
+				...baseFlag,
+				environments: [],
+			};
 
-		const result = evaluateFeatureFlag(flagWithoutEnv, "production", {
-			id: "user-1",
+			const result = evaluateFeatureFlag(flagWithoutEnv, "production", {
+				id: "user-1",
+			});
+
+			expect(result).toBe(false);
 		});
 
-		expect(result).toBe(false);
+		it("возвращает true если флаг включен и нет правил таргетинга", () => {
+			const enabledFlag = buildFlag({ enabled: true });
+
+			expect(
+				evaluateFeatureFlag(enabledFlag, "production", { id: "user-1" }),
+			).toBe(true);
+		});
+
+		it("возвращает false если флаг выключен (главный рубильник)", () => {
+			const disabledFlag = buildFlag({ enabled: false });
+
+			expect(
+				evaluateFeatureFlag(disabledFlag, "production", { id: "user-1" }),
+			).toBe(false);
+		});
 	});
 
-	it("honors force enable and disable overrides", () => {
-		const forcedOn = buildFlag({ forceEnabled: true, enabled: false });
-		const forcedOff = buildFlag({ forceDisabled: true, enabled: true });
+	describe("enabled=false - главный рубильник", () => {
+		it("игнорирует segment include таргеты при enabled=false", () => {
+			const flag = buildFlag({
+				enabled: false,
+				segmentTargets: [{ segment: "employee", include: true }],
+			});
 
-		expect(evaluateFeatureFlag(forcedOn, "production", { id: "user-1" })).toBe(
-			true,
-		);
-		expect(evaluateFeatureFlag(forcedOff, "production", { id: "user-1" })).toBe(
-			false,
-		);
+			expect(
+				evaluateFeatureFlag(flag, "production", {
+					id: "user-456",
+					segments: ["employee"],
+				}),
+			).toBe(false);
+		});
+
+		it("игнорирует rolloutPercentage при enabled=false", () => {
+			const flag = buildFlag({
+				enabled: false,
+				rolloutPercentage: 100,
+			});
+
+			expect(evaluateFeatureFlag(flag, "production", { id: "user-1" })).toBe(
+				false,
+			);
+		});
 	});
 
-	it("prefers user targets over other rules", () => {
-		const targeted = buildFlag({
-			enabled: false,
-			userTargets: [{ userId: "user-123", include: true }],
-			segmentTargets: [{ segment: "employee", include: false }],
-		});
-		const excluded = buildFlag({
-			enabled: true,
-			userTargets: [{ userId: "user-123", include: false }],
-			segmentTargets: [{ segment: "employee", include: true }],
+	describe("segment targeting при enabled=true", () => {
+		it("segment exclude работает", () => {
+			const flag = buildFlag({
+				enabled: true,
+				segmentTargets: [{ segment: "employee", include: false }],
+			});
+
+			expect(
+				evaluateFeatureFlag(flag, "production", {
+					id: "user-789",
+					segments: ["employee"],
+				}),
+			).toBe(false);
 		});
 
-		expect(
-			evaluateFeatureFlag(targeted, "production", { id: "user-123" }),
-		).toBe(true);
-		expect(
-			evaluateFeatureFlag(excluded, "production", { id: "user-123" }),
-		).toBe(false);
+		it("segment include работает (case insensitive)", () => {
+			const flag = buildFlag({
+				enabled: true,
+				segmentTargets: [{ segment: "employee", include: true }],
+			});
+
+			expect(
+				evaluateFeatureFlag(flag, "production", {
+					id: "user-456",
+					segments: ["Employee"],
+				}),
+			).toBe(true);
+		});
+
+		it("segment include работает как whitelist - пользователь не в сегменте не получает флаг", () => {
+			const flag = buildFlag({
+				enabled: true,
+				segmentTargets: [{ segment: "vip", include: true }],
+			});
+
+			expect(
+				evaluateFeatureFlag(flag, "production", {
+					id: "user-regular",
+					segments: [],
+				}),
+			).toBe(false);
+		});
 	});
 
-	it("matches segment targets when provided", () => {
-		const targeted = buildFlag({
-			enabled: false,
-			segmentTargets: [{ segment: "employee", include: true }],
-		});
-		const excluded = buildFlag({
-			enabled: true,
-			segmentTargets: [{ segment: "employee", include: false }],
+	describe("derived segments (phone, birthdate, employee)", () => {
+		it("phone сегменты работают", () => {
+			const flag = buildFlag({
+				enabled: true,
+				segmentTargets: [
+					{ segment: "phone-prefix3:555", include: true },
+					{ segment: "phone-last2:44", include: true },
+				],
+			});
+
+			expect(
+				evaluateFeatureFlag(flag, "production", {
+					id: "user-001",
+					phoneNumber: "+7 (555) 001-23-44",
+				}),
+			).toBe(true);
 		});
 
-		expect(
-			evaluateFeatureFlag(targeted, "production", {
-				id: "user-456",
-				segments: ["Employee"],
-			}),
-		).toBe(true);
-		expect(
-			evaluateFeatureFlag(excluded, "production", {
-				id: "user-789",
-				segments: ["employee"],
-			}),
-		).toBe(false);
+		it("phone exclude работает", () => {
+			const flag = buildFlag({
+				enabled: true,
+				segmentTargets: [{ segment: "phone-last2:44", include: false }],
+			});
+
+			expect(
+				evaluateFeatureFlag(flag, "production", {
+					id: "user-002",
+					phoneNumber: "+7 (555) 001-23-44",
+				}),
+			).toBe(false);
+		});
+
+		it("birthdate сегменты работают", () => {
+			const flag = buildFlag({
+				enabled: true,
+				segmentTargets: [{ segment: "birthdate:1990-01-01", include: true }],
+			});
+
+			expect(
+				evaluateFeatureFlag(flag, "production", {
+					id: "user-001",
+					birthDate: "1990-01-01",
+				}),
+			).toBe(true);
+		});
+
+		it("employee и new_customer сегменты работают", () => {
+			const flag = buildFlag({
+				enabled: true,
+				segmentTargets: [
+					{ segment: "employee", include: true },
+					{ segment: "new_customer", include: true },
+				],
+			});
+
+			expect(
+				evaluateFeatureFlag(flag, "production", {
+					id: "user-002",
+					isEmployee: true,
+					isNewCustomer: true,
+				}),
+			).toBe(true);
+		});
 	});
 
-	it("derives segments from user attributes for phone and birthdate", () => {
-		const targeted = buildFlag({
-			enabled: false,
-			segmentTargets: [
-				{ segment: "phone-prefix3:555", include: true },
-				{ segment: "phone-last2:44", include: true },
-				{ segment: "birthdate:1990-01-01", include: true },
-			],
+	describe("rollout percentage при enabled=true", () => {
+		it("100% раскатка включает флаг для всех", () => {
+			const flag = buildFlag({
+				enabled: true,
+				rolloutPercentage: 100,
+			});
+
+			expect(evaluateFeatureFlag(flag, "production", { id: "user-1" })).toBe(
+				true,
+			);
 		});
 
-		expect(
-			evaluateFeatureFlag(targeted, "production", {
-				id: "user-001",
-				phoneNumber: "+7 (555) 001-23-44",
-				birthDate: "1990-01-01",
-			}),
-		).toBe(true);
+		it("0% раскатка выключает флаг для всех", () => {
+			const flag = buildFlag({
+				enabled: true,
+				rolloutPercentage: 0,
+			});
 
-		const excluded = buildFlag({
-			enabled: true,
-			segmentTargets: [{ segment: "phone-last2:44", include: false }],
+			expect(evaluateFeatureFlag(flag, "production", { id: "user-1" })).toBe(
+				false,
+			);
 		});
 
-		expect(
-			evaluateFeatureFlag(excluded, "production", {
-				id: "user-002",
-				phoneNumber: "+7 (555) 001-23-44",
-			}),
-		).toBe(false);
+		it("раскатка работает вместе с segment includes", () => {
+			const flag = buildFlag({
+				enabled: true,
+				rolloutPercentage: 100,
+				segmentTargets: [{ segment: "vip", include: true }],
+			});
+
+			// VIP пользователь получает флаг через сегмент
+			expect(
+				evaluateFeatureFlag(flag, "production", {
+					id: "user-vip",
+					segments: ["vip"],
+				}),
+			).toBe(true);
+
+			// Обычный пользователь получает флаг через раскатку
+			expect(
+				evaluateFeatureFlag(flag, "production", {
+					id: "user-regular",
+					segments: [],
+				}),
+			).toBe(true);
+		});
 	});
 
-	it("derives employee and new customer segments from booleans", () => {
-		const targeted = buildFlag({
-			enabled: false,
-			segmentTargets: [
-				{ segment: "employee", include: true },
-				{ segment: "new_customer", include: true },
-			],
+	describe("комбинации правил", () => {
+		it("exclude перебивает include того же уровня", () => {
+			const flag = buildFlag({
+				enabled: true,
+				segmentTargets: [
+					{ segment: "employee", include: true },
+					{ segment: "contractor", include: false },
+				],
+			});
+
+			// Пользователь и employee, и contractor - exclude побеждает
+			expect(
+				evaluateFeatureFlag(flag, "production", {
+					id: "user-1",
+					segments: ["employee", "contractor"],
+				}),
+			).toBe(false);
 		});
 
-		expect(
-			evaluateFeatureFlag(targeted, "production", {
-				id: "user-002",
-				isEmployee: true,
-				isNewCustomer: true,
-			}),
-		).toBe(true);
-	});
+		it("segment exclude перебивает rollout", () => {
+			const flag = buildFlag({
+				enabled: true,
+				rolloutPercentage: 100,
+				segmentTargets: [{ segment: "blocked", include: false }],
+			});
 
-	it("uses rollout percentage when provided", () => {
-		const alwaysOnRollout = buildFlag({
-			enabled: false,
-			rolloutPercentage: 100,
+			expect(
+				evaluateFeatureFlag(flag, "production", {
+					id: "user-1",
+					segments: ["blocked"],
+				}),
+			).toBe(false);
 		});
-		const alwaysOffRollout = buildFlag({
-			enabled: false,
-			rolloutPercentage: 0,
-		});
-
-		expect(
-			evaluateFeatureFlag(alwaysOnRollout, "production", { id: "user-1" }),
-		).toBe(true);
-		expect(
-			evaluateFeatureFlag(alwaysOffRollout, "production", { id: "user-1" }),
-		).toBe(false);
-	});
-
-	it("falls back to environment enabled flag when no overrides match", () => {
-		const enabledFlag = buildFlag({ enabled: true });
-
-		expect(
-			evaluateFeatureFlag(enabledFlag, "production", { id: "user-1" }),
-		).toBe(true);
 	});
 });
 

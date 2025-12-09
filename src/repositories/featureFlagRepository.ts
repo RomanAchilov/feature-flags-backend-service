@@ -26,7 +26,6 @@ export type UpdateFeatureFlagInput = UpdateFlagInput;
 export const FLAG_WITH_RELATIONS_INCLUDE = {
 	environments: {
 		include: {
-			userTargets: true,
 			segmentTargets: {
 				orderBy: { createdAt: "asc" },
 			},
@@ -137,8 +136,6 @@ export const createFlag = async (
 						environment: env.environment,
 						enabled: env.enabled ?? false,
 						rolloutPercentage: env.rolloutPercentage ?? null,
-						forceEnabled: env.forceEnabled ?? null,
-						forceDisabled: env.forceDisabled ?? null,
 					})),
 				},
 			},
@@ -158,8 +155,6 @@ export const createFlag = async (
 					environment: env.environment,
 					enabled: env.enabled ?? false,
 					rolloutPercentage: env.rolloutPercentage ?? null,
-					forceEnabled: env.forceEnabled ?? null,
-					forceDisabled: env.forceDisabled ?? null,
 				})),
 			},
 		},
@@ -207,19 +202,11 @@ export const updateFlagByKey = async (
 					...(env.rolloutPercentage !== undefined
 						? { rolloutPercentage: env.rolloutPercentage }
 						: undefined),
-					...(env.forceEnabled !== undefined
-						? { forceEnabled: env.forceEnabled }
-						: undefined),
-					...(env.forceDisabled !== undefined
-						? { forceDisabled: env.forceDisabled }
-						: undefined),
 				},
 				create: {
 					environment: env.environment,
 					enabled: env.enabled ?? false,
 					rolloutPercentage: env.rolloutPercentage ?? null,
-					forceEnabled: env.forceEnabled ?? null,
-					forceDisabled: env.forceDisabled ?? null,
 				},
 			})),
 		};

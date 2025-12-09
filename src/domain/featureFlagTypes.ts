@@ -22,12 +22,6 @@ export type FeatureFlagWithEnvs = {
 		environment: Environment;
 		enabled: boolean;
 		rolloutPercentage: number | null;
-		forceEnabled: boolean | null;
-		forceDisabled: boolean | null;
-		userTargets: Array<{
-			userId: string;
-			include: boolean;
-		}>;
 		segmentTargets: Array<{
 			segment: string;
 			include: boolean;

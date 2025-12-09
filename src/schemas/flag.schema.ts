@@ -14,23 +14,10 @@ export const FlagKeySchema = z
 		"Key must contain only letters, numbers, dot, underscore, or dash",
 	);
 
-export const EnvironmentConfigSchema = z
-	.object({
-		environment: z.nativeEnum(FeatureEnvironment),
-		enabled: z.boolean().optional(),
-		rolloutPercentage: z.number().min(0).max(100).nullable().optional(),
-		forceEnabled: z.boolean().nullable().optional(),
-		forceDisabled: z.boolean().nullable().optional(),
-	})
-	.refine((env) => !(env.forceEnabled && env.forceDisabled), {
-		message: "forceEnabled and forceDisabled cannot both be true",
-		path: ["forceEnabled"],
-	});
-
-export const UserTargetSchema = z.object({
+export const EnvironmentConfigSchema = z.object({
 	environment: z.nativeEnum(FeatureEnvironment),
-	userId: z.string().min(1),
-	include: z.boolean(),
+	enabled: z.boolean().optional(),
+	rolloutPercentage: z.number().min(0).max(100).nullable().optional(),
 });
 
 export const SegmentTargetSchema = z.object({
@@ -49,7 +36,6 @@ export const CreateFlagSchema = z.object({
 	description: z.string().nullable().optional(),
 	type: z.nativeEnum(FeatureFlagType).optional(),
 	environments: z.array(EnvironmentConfigSchema).optional(),
-	userTargets: z.array(UserTargetSchema).optional(),
 	segmentTargets: z.array(SegmentTargetSchema).optional(),
 });
 
@@ -59,7 +45,6 @@ export const UpdateFlagSchema = z
 		description: z.string().nullable().optional(),
 		type: z.nativeEnum(FeatureFlagType).optional(),
 		environments: z.array(EnvironmentConfigSchema).nonempty().optional(),
-		userTargets: z.array(UserTargetSchema).optional(),
 		segmentTargets: z.array(SegmentTargetSchema).optional(),
 	})
 	.refine(
@@ -68,7 +53,6 @@ export const UpdateFlagSchema = z
 			data.description !== undefined ||
 			data.type !== undefined ||
 			data.environments !== undefined ||
-			data.userTargets !== undefined ||
 			data.segmentTargets !== undefined,
 		{
 			message: "At least one field must be provided",
@@ -98,7 +82,6 @@ export const ListFlagsQuerySchema = z.object({
 
 export type FlagKey = z.infer<typeof FlagKeySchema>;
 export type EnvironmentConfig = z.infer<typeof EnvironmentConfigSchema>;
-export type UserTargetInput = z.infer<typeof UserTargetSchema>;
 export type SegmentTargetInput = z.infer<typeof SegmentTargetSchema>;
 export type CreateFlagInput = z.infer<typeof CreateFlagSchema>;
 export type UpdateFlagInput = z.infer<typeof UpdateFlagSchema>;
