@@ -11,7 +11,11 @@
 		"lint": "biome lint --write .",
 		"check": "biome check --write .",
 		"typecheck": "tsc --noEmit",
-		"test": "vitest"
+		"test": "vitest",
+		"docker:db": "docker compose up -d",
+		"docker:db:down": "docker compose down",
+		"docker:keycloak": "docker compose -f docker-compose.keycloak.yml up -d",
+		"docker:keycloak:down": "docker compose -f docker-compose.keycloak.yml down"
 	},
 	"dependencies": {
 		"@hono/node-server": "^1.19.6",

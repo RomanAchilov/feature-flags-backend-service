@@ -1,40 +1,24 @@
+# Основные сервисы для backend
+# Запуск: docker compose up -d
+
 services:
-  keycloak:
-    image: quay.io/keycloak/keycloak:26.0
-    container_name: feature-flags-keycloak
+  # PostgreSQL для backend (production)
+  postgres:
+    image: postgres:16-alpine
+    container_name: feature-flags-postgres
     environment:
-      # Админ для первого входа
-      KC_BOOTSTRAP_ADMIN_USERNAME: admin
-      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
-      # База данных (dev mode использует встроенную H2)
-      KC_DB: dev-file
-      # Настройки для разработки
-      KC_HEALTH_ENABLED: "true"
-      KC_METRICS_ENABLED: "true"
+      POSTGRES_USER: flags
+      POSTGRES_PASSWORD: flags
+      POSTGRES_DB: feature_flags
     ports:
-      - "8080:8080"
-    command:
-      - start-dev
+      - "5432:5432"
     volumes:
-      - keycloak_data:/opt/keycloak/data
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/8080"]
+      test: ["CMD-SHELL", "pg_isready -U flags -d feature_flags"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  # PostgreSQL для backend (опционально, если нужен)
-  # postgres:
-  #   image: postgres:16-alpine
-  #   environment:
-  #     POSTGRES_USER: flags
-  #     POSTGRES_PASSWORD: flags
-  #     POSTGRES_DB: feature_flags
-  #   ports:
-  #     - "5432:5432"
-  #   volumes:
-  #     - postgres_data:/var/lib/postgresql/data
-
 volumes:
-  keycloak_data:
-  # postgres_data:
+  postgres_data:
