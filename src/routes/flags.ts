@@ -171,7 +171,11 @@ flagByKeyRoutes.get("/audit", async (c) => {
 	});
 
 	if (!paginationParsed.success) {
-		return badRequest(c, "Invalid pagination", paginationParsed.error.flatten());
+		return badRequest(
+			c,
+			"Invalid pagination",
+			paginationParsed.error.flatten(),
+		);
 	}
 
 	const { page, pageSize } = paginationParsed.data;
@@ -204,7 +208,11 @@ flagByKeyRoutes.patch("/environments/:environment", async (c) => {
 		.safeParse(c.req.param("environment"));
 
 	if (!environmentParsed.success) {
-		return badRequest(c, "Invalid environment", environmentParsed.error.flatten());
+		return badRequest(
+			c,
+			"Invalid environment",
+			environmentParsed.error.flatten(),
+		);
 	}
 
 	const body = await c.req.json().catch(() => null);

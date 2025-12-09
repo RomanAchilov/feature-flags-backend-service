@@ -105,4 +105,3 @@ export type UpdateFlagInput = z.infer<typeof UpdateFlagSchema>;
 export type ToggleEnvironmentInput = z.infer<typeof ToggleEnvironmentSchema>;
 export type PaginationInput = z.infer<typeof PaginationSchema>;
 export type ListFlagsQuery = z.infer<typeof ListFlagsQuerySchema>;
-

@@ -17,6 +17,7 @@
 		"@scalar/hono-api-reference": "^0.9.26",
 		"dotenv": "^17.2.3",
 		"hono": "^4.10.7",
+		"hono-rate-limiter": "^0.4.2",
 		"zod": "^4.1.13"
 	},
 	"devDependencies": {

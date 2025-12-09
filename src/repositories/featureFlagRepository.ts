@@ -10,7 +10,9 @@ import type {
 	UpdateFlagInput,
 } from "../schemas/flag.schema";
 
-export type PrismaClientOrTransaction = Prisma.TransactionClient | typeof prisma;
+export type PrismaClientOrTransaction =
+	| Prisma.TransactionClient
+	| typeof prisma;
 
 // Re-export для обратной совместимости (deprecated, использовать из schemas)
 export type EnvironmentConfigInput = EnvironmentConfig;

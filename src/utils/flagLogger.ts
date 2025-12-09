@@ -34,4 +34,3 @@ export const createTimer = () => {
 		elapsed: () => Date.now() - startedAt,
 	};
 };
-

@@ -1,11 +1,11 @@
 import { Hono } from "hono";
 import { prisma } from "../db/prisma";
-import type { CurrentUser } from "../middleware/auth";
 
-export const health = new Hono<{ Variables: { currentUser: CurrentUser } }>();
+// Health check endpoint (публичный, без аутентификации)
+export const health = new Hono();
 
 health.get("/", async (c) => {
-	// Optional connectivity check to ensure DB responds.
+	// Проверка доступности базы данных
 	try {
 		await prisma.$queryRaw`SELECT 1`;
 	} catch (error) {

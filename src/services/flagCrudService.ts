@@ -7,22 +7,23 @@ import { prisma } from "../db/prisma";
 import { handlePrismaError } from "../errors/prismaErrorHandler";
 import { logFlagChange } from "../repositories/featureFlagAuditRepository";
 import {
-	FLAG_WITH_RELATIONS_INCLUDE,
-	type FlagWithRelations,
 	createFlag,
 	deleteFlagByKey,
+	FLAG_WITH_RELATIONS_INCLUDE,
+	type FlagWithRelations,
 	fetchFlagWithRelations,
 	updateFlagByKey,
 } from "../repositories/featureFlagRepository";
 import type { CreateFlagInput, UpdateFlagInput } from "../schemas/flag.schema";
+import { createTimer, logMutation } from "../utils/flagLogger";
 import {
-	type ServiceResult,
 	badRequestError,
 	conflictError,
 	err,
 	internalError,
 	notFoundError,
 	ok,
+	type ServiceResult,
 } from "../utils/responses";
 import {
 	replaceSegmentTargets,
@@ -30,7 +31,6 @@ import {
 	upsertSegmentTargets,
 	upsertUserTargets,
 } from "./flagTargetService";
-import { createTimer, logMutation } from "../utils/flagLogger";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Типы результатов
@@ -353,4 +353,3 @@ const mapPrismaErrorToResult = <T>(
 
 	return err(internalError(fallbackMessage));
 };
-

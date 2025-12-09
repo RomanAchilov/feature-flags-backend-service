@@ -83,4 +83,3 @@ export const isPrismaConnectionError = (error: unknown): boolean => {
 	}
 	return error instanceof Prisma.PrismaClientInitializationError;
 };
-

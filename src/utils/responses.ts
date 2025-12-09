@@ -75,7 +75,10 @@ export const conflict = (c: Context, message: string) =>
 	c.json({ error: { code: "conflict", message } satisfies ApiError }, 409);
 
 export const internalServerError = (c: Context, message: string) =>
-	c.json({ error: { code: "internal_error", message } satisfies ApiError }, 500);
+	c.json(
+		{ error: { code: "internal_error", message } satisfies ApiError },
+		500,
+	);
 
 export const success = <T>(c: Context, data: T, status: 200 | 201 = 200) =>
 	c.json({ data }, status);
@@ -96,4 +99,3 @@ export const mapServiceError = (c: Context, error: ServiceError) => {
 			return internalServerError(c, error.message);
 	}
 };
-

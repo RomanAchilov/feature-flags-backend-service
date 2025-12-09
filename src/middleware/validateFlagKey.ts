@@ -25,4 +25,3 @@ export const validateFlagKey = async (c: Context, next: Next) => {
 	c.set("flagKey", parsed.data);
 	await next();
 };
-

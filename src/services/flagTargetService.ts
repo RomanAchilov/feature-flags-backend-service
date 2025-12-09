@@ -39,7 +39,9 @@ const mapUserTargetsToCreate = (
 			};
 		})
 		.filter(
-			(t): t is { flagEnvironmentId: string; userId: string; include: boolean } =>
+			(
+				t,
+			): t is { flagEnvironmentId: string; userId: string; include: boolean } =>
 				t !== null,
 		);
 };
@@ -59,8 +61,13 @@ const mapSegmentTargetsToCreate = (
 			};
 		})
 		.filter(
-			(t): t is { flagEnvironmentId: string; segment: string; include: boolean } =>
-				t !== null,
+			(
+				t,
+			): t is {
+				flagEnvironmentId: string;
+				segment: string;
+				include: boolean;
+			} => t !== null,
 		);
 };
 
@@ -157,4 +164,3 @@ export const replaceSegmentTargets = async (
 		});
 	}
 };
-
