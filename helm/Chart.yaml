@@ -1,0 +1,36 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# Feature Flags Backend — Helm Chart
+# ═══════════════════════════════════════════════════════════════════════════════
+apiVersion: v2
+name: feature-flags-backend
+description: |
+  Feature Flags Management Service — сервис управления фича-флагами.
+  Поддерживает: boolean/multivariant флаги, user/segment targeting, 
+  rollout percentage, Keycloak SSO.
+
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+
+# Зависимости (PostgreSQL опционально)
+dependencies:
+  - name: postgresql
+    version: "15.x.x"
+    repository: https://charts.bitnami.com/bitnami
+    condition: postgresql.enabled
+
+keywords:
+  - feature-flags
+  - feature-toggle
+  - a-b-testing
+  - rollout
+  - keycloak
+
+maintainers:
+  - name: Your Team
+    email: team@example.com
+
+home: https://github.com/your-org/feature-flags
+sources:
+  - https://github.com/your-org/feature-flags
+

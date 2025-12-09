@@ -15,7 +15,14 @@
 		"docker:db": "docker compose up -d",
 		"docker:db:down": "docker compose down",
 		"docker:keycloak": "docker compose -f docker-compose.keycloak.yml up -d",
-		"docker:keycloak:down": "docker compose -f docker-compose.keycloak.yml down"
+		"docker:keycloak:down": "docker compose -f docker-compose.keycloak.yml down",
+		"docker:build": "docker build -t feature-flags-backend:latest .",
+		"secrets:encrypt": "tsx src/config/secrets.ts encrypt",
+		"secrets:decrypt": "tsx src/config/secrets.ts decrypt",
+		"secrets:verify": "tsx src/config/secrets.ts verify",
+		"db:migrate": "prisma migrate deploy",
+		"db:generate": "prisma generate",
+		"db:push": "prisma db push"
 	},
 	"dependencies": {
 		"@hono/node-server": "^1.19.6",

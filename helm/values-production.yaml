@@ -1,0 +1,169 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# Feature Flags Backend — Production Values
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# Пример конфигурации для production окружения.
+# Скопируйте и адаптируйте под вашу инфраструктуру.
+#
+# Установка:
+#   helm install feature-flags ./helm \
+#     -f helm/values-production.yaml \
+#     -n feature-flags --create-namespace
+#
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# ───────────────────────────────────────────────────────────────────────────────
+# Образ
+# ───────────────────────────────────────────────────────────────────────────────
+
+image:
+  repository: your-registry.io/feature-flags-backend
+  tag: "1.0.0"  # Используйте конкретную версию, не latest!
+  pullPolicy: IfNotPresent
+
+imagePullSecrets:
+  - name: registry-credentials
+
+# ───────────────────────────────────────────────────────────────────────────────
+# Репликация
+# ───────────────────────────────────────────────────────────────────────────────
+
+replicaCount: 3
+
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 2
+
+# ───────────────────────────────────────────────────────────────────────────────
+# Ресурсы (настройте под ваши нагрузки)
+# ───────────────────────────────────────────────────────────────────────────────
+
+resources:
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+  requests:
+    cpu: 200m
+    memory: 256Mi
+
+# ───────────────────────────────────────────────────────────────────────────────
+# Ingress
+# ───────────────────────────────────────────────────────────────────────────────
+
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    kubernetes.io/tls-acme: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
+    # Rate limiting на уровне Ingress (дополнительно)
+    nginx.ingress.kubernetes.io/limit-rps: "50"
+  hosts:
+    - host: feature-flags-api.your-domain.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: feature-flags-tls
+      hosts:
+        - feature-flags-api.your-domain.com
+
+# ───────────────────────────────────────────────────────────────────────────────
+# Конфигурация приложения
+# ───────────────────────────────────────────────────────────────────────────────
+
+config:
+  authMode: keycloak
+  port: 4000
+  logLevel: info
+  corsOrigins: "https://feature-flags-admin.your-domain.com"
+  rateLimitWindowMs: 60000
+  rateLimitMaxRequests: 100
+  rateLimitEvaluateMax: 500
+  rateLimitMutationMax: 30
+
+# ───────────────────────────────────────────────────────────────────────────────
+# Keycloak — ИЗМЕНИТЕ ПОД ВАШУ КОНФИГУРАЦИЮ
+# ───────────────────────────────────────────────────────────────────────────────
+
+keycloak:
+  url: "https://keycloak.your-domain.com"
+  realm: "your-company-realm"
+  clientId: "feature-flags-api"
+  adminRole: "feature-flags-admin"
+
+# ───────────────────────────────────────────────────────────────────────────────
+# Secrets — РЕКОМЕНДУЕМЫЙ СПОСОБ
+# ───────────────────────────────────────────────────────────────────────────────
+
+secrets:
+  # Используем существующий Secret (создайте его через Sealed Secrets или вручную)
+  existingSecret: "feature-flags-secrets"
+  databaseUrlKey: "DATABASE_URL"
+  apiKeysKey: "API_KEYS"
+  encryptionPasswordKey: "ENCRYPTION_PASSWORD"
+
+# Пример создания Secret вручную:
+# kubectl create secret generic feature-flags-secrets \
+#   --from-literal=DATABASE_URL="postgresql://user:pass@postgres:5432/db" \
+#   --from-literal=API_KEYS="key1,key2,key3" \
+#   --from-literal=ENCRYPTION_PASSWORD="your-master-password" \
+#   -n feature-flags
+
+# ───────────────────────────────────────────────────────────────────────────────
+# Pod метки и аннотации
+# ───────────────────────────────────────────────────────────────────────────────
+
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "4000"
+  prometheus.io/path: "/health"
+
+# ───────────────────────────────────────────────────────────────────────────────
+# Anti-affinity для распределения по нодам
+# ───────────────────────────────────────────────────────────────────────────────
+
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - feature-flags-backend
+          topologyKey: kubernetes.io/hostname
+
+# ───────────────────────────────────────────────────────────────────────────────
+# PostgreSQL — выключен (используйте внешнюю БД в production)
+# ───────────────────────────────────────────────────────────────────────────────
+
+postgresql:
+  enabled: false
+
+# ───────────────────────────────────────────────────────────────────────────────
+# Init Container для миграций
+# ───────────────────────────────────────────────────────────────────────────────
+
+initContainers:
+  - name: run-migrations
+    image: your-registry.io/feature-flags-backend:1.0.0
+    command: ["npx", "prisma", "migrate", "deploy"]
+    env:
+      - name: DATABASE_URL
+        valueFrom:
+          secretKeyRef:
+            name: feature-flags-secrets
+            key: DATABASE_URL
+

@@ -1,0 +1,296 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# Feature Flags Backend — Default Values
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# Это файл с базовыми значениями. Для production используйте values-production.yaml
+# или создайте свой values-custom.yaml с переопределениями.
+#
+# Установка:
+#   helm install feature-flags ./helm -f values-production.yaml
+#
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# ───────────────────────────────────────────────────────────────────────────────
+# Базовые настройки
+# ───────────────────────────────────────────────────────────────────────────────
+
+replicaCount: 2
+
+image:
+  repository: your-registry.io/feature-flags-backend
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+#  - name: registry-credentials
+
+nameOverride: ""
+fullnameOverride: ""
+
+# ───────────────────────────────────────────────────────────────────────────────
+# Service Account
+# ───────────────────────────────────────────────────────────────────────────────
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+# ───────────────────────────────────────────────────────────────────────────────
+# Pod настройки
+# ───────────────────────────────────────────────────────────────────────────────
+
+podAnnotations: {}
+#  prometheus.io/scrape: "true"
+#  prometheus.io/port: "4000"
+#  prometheus.io/path: "/health"
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1001
+  runAsGroup: 1001
+  fsGroup: 1001
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 1001
+
+# ───────────────────────────────────────────────────────────────────────────────
+# Service
+# ───────────────────────────────────────────────────────────────────────────────
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 4000
+  annotations: {}
+
+# ───────────────────────────────────────────────────────────────────────────────
+# Ingress
+# ───────────────────────────────────────────────────────────────────────────────
+
+ingress:
+  enabled: false
+  className: "nginx"
+  annotations: {}
+    # kubernetes.io/tls-acme: "true"
+    # nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+  hosts:
+    - host: feature-flags.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+  #  - secretName: feature-flags-tls
+  #    hosts:
+  #      - feature-flags.example.com
+
+# ───────────────────────────────────────────────────────────────────────────────
+# Ресурсы
+# ───────────────────────────────────────────────────────────────────────────────
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+# ───────────────────────────────────────────────────────────────────────────────
+# Autoscaling
+# ───────────────────────────────────────────────────────────────────────────────
+
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 80
+  targetMemoryUtilizationPercentage: 80
+
+# ───────────────────────────────────────────────────────────────────────────────
+# Pod Disruption Budget
+# ───────────────────────────────────────────────────────────────────────────────
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+  # maxUnavailable: 1
+
+# ───────────────────────────────────────────────────────────────────────────────
+# Node Selector / Tolerations / Affinity
+# ───────────────────────────────────────────────────────────────────────────────
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+  # Пример anti-affinity для распределения по нодам:
+  # podAntiAffinity:
+  #   preferredDuringSchedulingIgnoredDuringExecution:
+  #     - weight: 100
+  #       podAffinityTerm:
+  #         labelSelector:
+  #           matchExpressions:
+  #             - key: app.kubernetes.io/name
+  #               operator: In
+  #               values:
+  #                 - feature-flags-backend
+  #         topologyKey: kubernetes.io/hostname
+
+# ───────────────────────────────────────────────────────────────────────────────
+# Health Checks
+# ───────────────────────────────────────────────────────────────────────────────
+
+livenessProbe:
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+# ───────────────────────────────────────────────────────────────────────────────
+# Конфигурация приложения
+# ───────────────────────────────────────────────────────────────────────────────
+
+config:
+  # Режим аутентификации: keycloak | dev | none
+  authMode: keycloak
+
+  # Порт приложения
+  port: 4000
+
+  # Уровень логирования
+  logLevel: info
+
+  # CORS origins (через запятую)
+  corsOrigins: "https://admin.example.com"
+
+  # Rate limiting
+  rateLimitWindowMs: 60000
+  rateLimitMaxRequests: 100
+  rateLimitEvaluateMax: 200
+  rateLimitMutationMax: 20
+
+# ───────────────────────────────────────────────────────────────────────────────
+# Keycloak настройки
+# ───────────────────────────────────────────────────────────────────────────────
+
+keycloak:
+  # URL вашего Keycloak сервера
+  url: "https://keycloak.example.com"
+
+  # Realm для feature flags
+  realm: "your-realm"
+
+  # Client ID (должен совпадать с настройками в Keycloak)
+  clientId: "feature-flags-api"
+
+  # Роль администратора (должна существовать в Keycloak)
+  adminRole: "feature-flags-admin"
+
+# ───────────────────────────────────────────────────────────────────────────────
+# Secrets — чувствительные данные
+# ───────────────────────────────────────────────────────────────────────────────
+
+secrets:
+  # Вариант 1: Значения напрямую (НЕ рекомендуется для production!)
+  # databaseUrl: "postgresql://user:pass@host:5432/db"
+  # apiKeys: "key1,key2,key3"
+  # encryptionPassword: "your-master-password"
+
+  # Вариант 2: Ссылка на существующий Kubernetes Secret (РЕКОМЕНДУЕТСЯ)
+  existingSecret: ""
+  # Имя ключа в существующем Secret для DATABASE_URL
+  databaseUrlKey: "DATABASE_URL"
+  # Имя ключа для API_KEYS
+  apiKeysKey: "API_KEYS"
+  # Имя ключа для ENCRYPTION_PASSWORD
+  encryptionPasswordKey: "ENCRYPTION_PASSWORD"
+
+  # Вариант 3: Зашифрованные значения (ENC(...))
+  # Если используете встроенное шифрование, укажите здесь ENC() значения
+  # databaseUrl: "ENC(base64_encrypted_value)"
+  # apiKeys: "ENC(base64_encrypted_value)"
+
+# ───────────────────────────────────────────────────────────────────────────────
+# PostgreSQL (встроенный, опционально)
+# ───────────────────────────────────────────────────────────────────────────────
+
+postgresql:
+  # Включить встроенный PostgreSQL (только для dev/test)
+  enabled: false
+
+  auth:
+    username: feature_flags
+    password: ""  # Используйте existingSecret в production!
+    database: feature_flags
+    existingSecret: ""
+
+  primary:
+    persistence:
+      enabled: true
+      size: 8Gi
+
+# ───────────────────────────────────────────────────────────────────────────────
+# Дополнительные переменные окружения
+# ───────────────────────────────────────────────────────────────────────────────
+
+extraEnv: []
+#  - name: CUSTOM_VAR
+#    value: "custom_value"
+#  - name: SECRET_FROM_VAULT
+#    valueFrom:
+#      secretKeyRef:
+#        name: vault-secrets
+#        key: api-secret
+
+extraEnvFrom: []
+#  - secretRef:
+#      name: additional-secrets
+#  - configMapRef:
+#      name: additional-config
+
+# ───────────────────────────────────────────────────────────────────────────────
+# Init Containers (например, для миграций)
+# ───────────────────────────────────────────────────────────────────────────────
+
+initContainers: []
+#  - name: run-migrations
+#    image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+#    command: ["npx", "prisma", "migrate", "deploy"]
+#    envFrom:
+#      - secretRef:
+#          name: "{{ include \"feature-flags-backend.fullname\" . }}-secrets"
+
+# ───────────────────────────────────────────────────────────────────────────────
+# Sidecar Containers
+# ───────────────────────────────────────────────────────────────────────────────
+
+sidecars: []
+
+# ───────────────────────────────────────────────────────────────────────────────
+# Volumes
+# ───────────────────────────────────────────────────────────────────────────────
+
+extraVolumes: []
+
+extraVolumeMounts: []
+
