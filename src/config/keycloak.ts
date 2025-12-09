@@ -53,9 +53,7 @@ export const apiKeys = (apiKeyEnv.data?.API_KEYS ?? "")
 
 const AuthModeSchema = z.enum(["keycloak", "dev", "none"]).default("dev");
 
-export const authMode = AuthModeSchema.parse(
-	process.env.AUTH_MODE ?? "dev",
-);
+export const authMode = AuthModeSchema.parse(process.env.AUTH_MODE ?? "dev");
 
 /**
  * AUTH_MODE:
@@ -63,4 +61,3 @@ export const authMode = AuthModeSchema.parse(
  * - "dev" — dev-режим с заголовками x-user-id, x-user-roles (текущее поведение)
  * - "none" — без аутентификации (только для тестов)
  */
-

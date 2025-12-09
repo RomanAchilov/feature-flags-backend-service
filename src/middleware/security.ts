@@ -130,7 +130,14 @@ export const corsMiddleware = (
 	return cors({
 		origin: origins,
 		allowMethods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
-		allowHeaders: ["Content-Type", "Authorization", "X-Request-ID", "X-API-Key", "x-user-id", "x-user-roles"],
+		allowHeaders: [
+			"Content-Type",
+			"Authorization",
+			"X-Request-ID",
+			"X-API-Key",
+			"x-user-id",
+			"x-user-roles",
+		],
 		exposeHeaders: [
 			"RateLimit-Limit",
 			"RateLimit-Remaining",

@@ -352,4 +352,3 @@ export const optionalKeycloakAuth = (
 		await next();
 	};
 };
-

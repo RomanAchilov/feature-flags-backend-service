@@ -54,7 +54,10 @@ app.use("*", securityHeaders());
 
 // 3. CORS — настройка Cross-Origin
 // Разрешаем запросы с админ-панели и тестового клиента
-const ALLOWED_ORIGINS = (process.env.CORS_ORIGINS ?? "http://localhost:3000,http://localhost:3001,http://localhost:5173").split(",");
+const ALLOWED_ORIGINS = (
+	process.env.CORS_ORIGINS ??
+	"http://localhost:3000,http://localhost:3001,http://localhost:5173"
+).split(",");
 app.use("*", corsMiddleware(ALLOWED_ORIGINS, true));
 
 // 4. Body Limit — защита от payload-based DoS (100KB)
