@@ -1,9 +1,16 @@
-import { FeatureEnvironment, FeatureFlagType } from "@prisma/client";
 import { z } from "zod";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Базовые схемы
 // ─────────────────────────────────────────────────────────────────────────────
+
+export const FeatureEnvironmentSchema = z.enum([
+	"development",
+	"staging",
+	"production",
+]);
+
+export const FeatureFlagTypeSchema = z.enum(["BOOLEAN", "MULTIVARIANT"]);
 
 export const FlagKeySchema = z
 	.string()
@@ -15,13 +22,13 @@ export const FlagKeySchema = z
 	);
 
 export const EnvironmentConfigSchema = z.object({
-	environment: z.nativeEnum(FeatureEnvironment),
+	environment: FeatureEnvironmentSchema,
 	enabled: z.boolean().optional(),
 	rolloutPercentage: z.number().min(0).max(100).nullable().optional(),
 });
 
 export const SegmentTargetSchema = z.object({
-	environment: z.nativeEnum(FeatureEnvironment),
+	environment: FeatureEnvironmentSchema,
 	segment: z.string().min(1),
 	include: z.boolean(),
 });
@@ -34,7 +41,7 @@ export const CreateFlagSchema = z.object({
 	key: FlagKeySchema,
 	name: z.string().min(1),
 	description: z.string().nullable().optional(),
-	type: z.nativeEnum(FeatureFlagType).optional(),
+	type: FeatureFlagTypeSchema.optional(),
 	environments: z.array(EnvironmentConfigSchema).optional(),
 	segmentTargets: z.array(SegmentTargetSchema).optional(),
 });
@@ -43,7 +50,7 @@ export const UpdateFlagSchema = z
 	.object({
 		name: z.string().min(1).optional(),
 		description: z.string().nullable().optional(),
-		type: z.nativeEnum(FeatureFlagType).optional(),
+		type: FeatureFlagTypeSchema.optional(),
 		environments: z.array(EnvironmentConfigSchema).nonempty().optional(),
 		segmentTargets: z.array(SegmentTargetSchema).optional(),
 	})
@@ -70,7 +77,7 @@ export const PaginationSchema = z.object({
 });
 
 export const ListFlagsQuerySchema = z.object({
-	environment: z.nativeEnum(FeatureEnvironment).optional(),
+	environment: FeatureEnvironmentSchema.optional(),
 	search: z.string().optional(),
 	page: z.coerce.number().int().positive().default(1),
 	pageSize: z.coerce.number().int().positive().max(200).default(20),

@@ -9,31 +9,16 @@ const normalizeDigits = (value: string) => value.replace(/\D/g, "");
 export const buildUserSegments = (user: UserContext): string[] => {
 	const segments = new Set<string>();
 
+	// Прямые сегменты (vip, beta, employee и т.д.)
 	for (const segment of user.segments ?? []) {
 		if (segment.trim()) {
 			segments.add(segment.trim().toLowerCase());
 		}
 	}
 
-	if (user.isEmployee === true) {
-		segments.add("employee");
-	} else if (user.isEmployee === false) {
-		segments.add("non_employee");
-	}
-
-	if (user.isNewCustomer === true) {
-		segments.add("new_customer");
-	} else if (user.isNewCustomer === false) {
-		segments.add("old_customer");
-	}
-
-	const phone =
-		user.phoneNumber ||
-		(typeof user.attributes?.phone === "string"
-			? user.attributes.phone
-			: undefined);
-	if (phone) {
-		const digits = normalizeDigits(phone);
+	// Сегменты из номера телефона
+	if (user.phoneNumber) {
+		const digits = normalizeDigits(user.phoneNumber);
 		if (digits) {
 			segments.add(`phone:${digits}`);
 			if (digits.length >= 2) {
@@ -54,13 +39,9 @@ export const buildUserSegments = (user: UserContext): string[] => {
 		}
 	}
 
-	const birthDateInput =
-		user.birthDate ||
-		(typeof user.attributes?.birthDate === "string"
-			? user.attributes.birthDate
-			: undefined);
-	if (birthDateInput) {
-		const parsed = new Date(birthDateInput);
+	// Сегмент из даты рождения
+	if (user.birthDate) {
+		const parsed = new Date(user.birthDate);
 		if (!Number.isNaN(parsed.getTime())) {
 			const isoDate = parsed.toISOString().slice(0, 10);
 			segments.add(`birthdate:${isoDate}`);

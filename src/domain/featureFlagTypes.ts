@@ -2,14 +2,9 @@ export type Environment = "development" | "staging" | "production";
 
 export interface UserContext {
 	id: string;
-	role?: string;
-	country?: string;
 	segments?: string[];
-	isEmployee?: boolean;
-	isNewCustomer?: boolean;
 	phoneNumber?: string;
 	birthDate?: string;
-	attributes?: Record<string, unknown>;
 }
 
 export type FeatureFlagWithEnvs = {

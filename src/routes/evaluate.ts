@@ -1,4 +1,3 @@
-import { FeatureEnvironment } from "@prisma/client";
 import { Hono } from "hono";
 import { z } from "zod";
 import { prisma } from "../db/prisma";
@@ -11,17 +10,12 @@ import type { CurrentUser } from "../middleware/auth";
 import { evaluateFeatureFlag } from "../services/featureFlagService";
 
 const EvaluateSchema = z.object({
-	environment: z.nativeEnum(FeatureEnvironment),
+	environment: z.enum(["development", "staging", "production"]),
 	user: z.object({
 		id: z.string().min(1),
-		role: z.string().optional(),
-		country: z.string().optional(),
 		segments: z.array(z.string().min(1)).optional(),
-		isEmployee: z.boolean().optional(),
-		isNewCustomer: z.boolean().optional(),
 		phoneNumber: z.string().optional(),
 		birthDate: z.string().optional(),
-		attributes: z.record(z.string(), z.unknown()).optional(),
 	}),
 	flags: z.array(z.string().min(1)),
 });

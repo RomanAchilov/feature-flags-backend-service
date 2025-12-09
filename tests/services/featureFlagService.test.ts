@@ -189,8 +189,7 @@ describe("evaluateFeatureFlag", () => {
 			expect(
 				evaluateFeatureFlag(flag, "production", {
 					id: "user-002",
-					isEmployee: true,
-					isNewCustomer: true,
+					segments: ["employee", "new_customer"],
 				}),
 			).toBe(true);
 		});
