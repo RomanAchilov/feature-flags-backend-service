@@ -13,6 +13,7 @@ import {
 import {
 	createFlag,
 	deleteFlagByKey,
+	fetchFlagWithRelations,
 	getFlagByKey,
 	listFlags,
 	updateFlagByKey,
@@ -25,6 +26,16 @@ vi.mock("../../src/repositories/featureFlagRepository", () => ({
 	getFlagByKey: vi.fn(),
 	updateFlagByKey: vi.fn(),
 	deleteFlagByKey: vi.fn(),
+	fetchFlagWithRelations: vi.fn(),
+	FLAG_WITH_RELATIONS_INCLUDE: {
+		environments: {
+			include: {
+				userTargets: true,
+				segmentTargets: { orderBy: { createdAt: "asc" } },
+			},
+		},
+		auditLogs: { orderBy: { timestamp: "desc" }, take: 5 },
+	},
 }));
 
 vi.mock("../../src/repositories/featureFlagAuditRepository", () => ({
@@ -87,6 +98,8 @@ const updateFlagByKeyMock = updateFlagByKey as unknown as ReturnType<
 const deleteFlagByKeyMock = deleteFlagByKey as unknown as ReturnType<
 	typeof vi.fn
 >;
+const fetchFlagWithRelationsMock =
+	fetchFlagWithRelations as unknown as ReturnType<typeof vi.fn>;
 const logFlagChangeMock = logFlagChange as unknown as ReturnType<typeof vi.fn>;
 const getAuditLogForFlagMock = getAuditLogForFlag as unknown as ReturnType<
 	typeof vi.fn
@@ -140,6 +153,7 @@ describe("flags route", () => {
 		getFlagByKeyMock.mockReset();
 		updateFlagByKeyMock.mockReset();
 		deleteFlagByKeyMock.mockReset();
+		fetchFlagWithRelationsMock.mockReset();
 		logFlagChangeMock.mockReset();
 		getAuditLogForFlagMock.mockReset();
 
@@ -178,7 +192,7 @@ describe("flags route", () => {
 
 	it("creates a flag and returns enriched data", async () => {
 		createFlagMock.mockResolvedValueOnce(sampleFlag);
-		prismaMock.featureFlag.findFirst.mockResolvedValueOnce(sampleFlag);
+		fetchFlagWithRelationsMock.mockResolvedValueOnce(sampleFlag);
 
 		const app = createAppWithUser();
 		const res = await app.request("/flags", {
@@ -207,7 +221,7 @@ describe("flags route", () => {
 	});
 
 	it("returns 404 when flag is missing", async () => {
-		prismaMock.featureFlag.findFirst.mockResolvedValueOnce(null);
+		fetchFlagWithRelationsMock.mockResolvedValueOnce(null);
 
 		const app = createAppWithUser();
 		const res = await app.request("/flags/missing-flag");
@@ -217,13 +231,14 @@ describe("flags route", () => {
 	});
 
 	it("updates a flag and logs change", async () => {
-		prismaMock.featureFlag.findFirst
-			.mockResolvedValueOnce(sampleFlag)
-			.mockResolvedValueOnce({ ...sampleFlag, name: "Updated flag" });
-		updateFlagByKeyMock.mockResolvedValueOnce({
-			...sampleFlag,
-			name: "Updated flag",
-		});
+		const updatedFlag = { ...sampleFlag, name: "Updated flag" };
+
+		// fetchFlagWithRelations вызывается дважды: для before и для hydrated после обновления
+		fetchFlagWithRelationsMock
+			.mockResolvedValueOnce(sampleFlag) // before
+			.mockResolvedValueOnce(updatedFlag); // hydrated
+
+		updateFlagByKeyMock.mockResolvedValueOnce(updatedFlag);
 
 		const app = createAppWithUser();
 		const res = await app.request("/flags/flag-1", {
@@ -302,7 +317,7 @@ describe("flags route", () => {
 	});
 
 	it("soft deletes a flag", async () => {
-		prismaMock.featureFlag.findFirst.mockResolvedValueOnce(sampleFlag);
+		fetchFlagWithRelationsMock.mockResolvedValueOnce(sampleFlag);
 		deleteFlagByKeyMock.mockResolvedValueOnce(true);
 
 		const app = createAppWithUser();

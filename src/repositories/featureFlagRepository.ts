@@ -4,31 +4,41 @@ import {
 	type Prisma,
 } from "@prisma/client";
 import { prisma } from "../db/prisma";
+import type {
+	CreateFlagInput,
+	EnvironmentConfig,
+	UpdateFlagInput,
+} from "../schemas/flag.schema";
 
-type PrismaClientOrTransaction = Prisma.TransactionClient | typeof prisma;
+export type PrismaClientOrTransaction = Prisma.TransactionClient | typeof prisma;
 
-export type EnvironmentConfigInput = {
-	environment: FeatureEnvironment;
-	enabled?: boolean;
-	rolloutPercentage?: number | null;
-	forceEnabled?: boolean | null;
-	forceDisabled?: boolean | null;
-};
+// Re-export для обратной совместимости (deprecated, использовать из schemas)
+export type EnvironmentConfigInput = EnvironmentConfig;
+export type CreateFeatureFlagInput = CreateFlagInput;
+export type UpdateFeatureFlagInput = UpdateFlagInput;
 
-export type CreateFeatureFlagInput = {
-	key: string;
-	name: string;
-	description?: string | null;
-	type?: FeatureFlagType;
-	environments?: EnvironmentConfigInput[];
-};
+// ─────────────────────────────────────────────────────────────────────────────
+// Константы для include-паттернов
+// ─────────────────────────────────────────────────────────────────────────────
 
-export type UpdateFeatureFlagInput = {
-	name?: string;
-	description?: string | null;
-	type?: FeatureFlagType;
-	environments?: EnvironmentConfigInput[];
-};
+export const FLAG_WITH_RELATIONS_INCLUDE = {
+	environments: {
+		include: {
+			userTargets: true,
+			segmentTargets: {
+				orderBy: { createdAt: "asc" },
+			},
+		},
+	},
+	auditLogs: {
+		orderBy: { timestamp: "desc" },
+		take: 5,
+	},
+} satisfies Prisma.FeatureFlagInclude;
+
+export type FlagWithRelations = Prisma.FeatureFlagGetPayload<{
+	include: typeof FLAG_WITH_RELATIONS_INCLUDE;
+}>;
 
 // Получить флаг по ключу; выбрасывает Prisma ошибки при проблемах с подключением.
 export const getFlagByKey = async (
@@ -244,4 +254,67 @@ const dedupeEnvironments = (envs: EnvironmentConfigInput[]) => {
 	}
 
 	return result;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Загрузка флага с полными связями
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type FetchFlagOptions = {
+	/** Если true, при ошибке загрузки связей вернёт минимальный объект */
+	allowFallback?: boolean;
+	/** Клиент для fallback-запроса (по умолчанию prisma) */
+	fallbackClient?: typeof prisma;
+};
+
+/**
+ * Загружает флаг со всеми связями (environments, targets, audit logs).
+ * При allowFallback=true в случае ошибки вернёт минимальный объект без связей.
+ */
+export const fetchFlagWithRelations = async (
+	key: string,
+	client: PrismaClientOrTransaction = prisma,
+	options?: FetchFlagOptions,
+): Promise<FlagWithRelations | null> => {
+	const fallbackClient = options?.fallbackClient ?? prisma;
+
+	try {
+		return await client.featureFlag.findFirst({
+			where: { key, deletedAt: null },
+			include: FLAG_WITH_RELATIONS_INCLUDE,
+		});
+	} catch (error) {
+		if (!options?.allowFallback) {
+			throw error;
+		}
+
+		console.warn(
+			"Failed to load flag with relations, falling back to minimal select",
+			error,
+		);
+
+		const minimal = await fallbackClient.featureFlag.findFirst({
+			where: { key, deletedAt: null },
+			select: {
+				id: true,
+				key: true,
+				name: true,
+				description: true,
+				type: true,
+				createdAt: true,
+				updatedAt: true,
+				deletedAt: true,
+			},
+		});
+
+		if (!minimal) return null;
+
+		// Возвращаем структуру, совместимую с FlagWithRelations
+		return {
+			...minimal,
+			tags: [],
+			environments: [] as FlagWithRelations["environments"],
+			auditLogs: [] as FlagWithRelations["auditLogs"],
+		} satisfies FlagWithRelations;
+	}
 };
