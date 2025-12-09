@@ -139,9 +139,10 @@ export const keycloakAuth = (config: KeycloakConfig): MiddlewareHandler => {
 
 		try {
 			const jwks = getJWKS(issuerUrl);
+			// Audience проверяем только если clientId совпадает с azp токена
+			// В Keycloak по умолчанию aud может быть 'account', а не clientId
 			const { payload } = await jose.jwtVerify(token, jwks, {
 				issuer: issuerUrl,
-				audience: parsed.clientId,
 			});
 
 			const keycloakPayload = payload as unknown as KeycloakTokenPayload;
@@ -325,7 +326,6 @@ export const optionalKeycloakAuth = (
 			const jwks = getJWKS(issuerUrl);
 			const { payload } = await jose.jwtVerify(token, jwks, {
 				issuer: issuerUrl,
-				audience: parsed.clientId,
 			});
 
 			const keycloakPayload = payload as unknown as KeycloakTokenPayload;

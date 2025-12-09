@@ -6,7 +6,7 @@ import { z } from "zod";
 
 const KeycloakEnvSchema = z.object({
 	KEYCLOAK_URL: z.string().url().default("http://localhost:8080"),
-	KEYCLOAK_REALM: z.string().min(1).default("feature-flags"),
+	KEYCLOAK_REALM: z.string().min(1).default("FeatureFlags"),
 	KEYCLOAK_CLIENT_ID: z.string().min(1).default("feature-flags-api"),
 	KEYCLOAK_ADMIN_ROLE: z.string().default("feature-flags-admin"),
 });
@@ -37,7 +37,7 @@ if (!apiKeyEnv.success) {
 
 export const keycloakConfig = {
 	serverUrl: keycloakEnv.data?.KEYCLOAK_URL ?? "http://localhost:8080",
-	realm: keycloakEnv.data?.KEYCLOAK_REALM ?? "feature-flags",
+	realm: keycloakEnv.data?.KEYCLOAK_REALM ?? "FeatureFlags",
 	clientId: keycloakEnv.data?.KEYCLOAK_CLIENT_ID ?? "feature-flags-api",
 	adminRole: keycloakEnv.data?.KEYCLOAK_ADMIN_ROLE ?? "feature-flags-admin",
 };
