@@ -41,12 +41,8 @@ COPY package.json package-lock.json ./
 
 # Копируем исходный код
 COPY tsconfig.json ./
-COPY schema.prisma ./
-COPY prisma ./prisma
+COPY drizzle.config.ts ./
 COPY src ./src
-
-# Генерируем Prisma Client
-RUN npx prisma generate
 
 # Собираем TypeScript
 RUN npm run build
@@ -75,8 +71,6 @@ WORKDIR /app
 COPY --from=builder --chown=hono:nodejs /app/node_modules ./node_modules
 COPY --from=builder --chown=hono:nodejs /app/dist ./dist
 COPY --from=builder --chown=hono:nodejs /app/package.json ./
-COPY --from=builder --chown=hono:nodejs /app/schema.prisma ./
-COPY --from=builder --chown=hono:nodejs /app/prisma ./prisma
 
 # Переключаемся на непривилегированного пользователя
 USER hono

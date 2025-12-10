@@ -1,42 +1,50 @@
-import type { FeatureFlagAuditAction, Prisma } from "@prisma/client";
-import { prisma } from "../db/prisma";
-
-type PrismaClientOrTransaction = Prisma.TransactionClient | typeof prisma;
+import { desc, eq } from "drizzle-orm";
+import { db } from "../db/drizzle";
+import { featureFlagAuditLogs } from "../db/schema";
+import type { DrizzleClientOrTransaction } from "./featureFlagRepository";
 
 export const logFlagChange = async (
 	params: {
 		flagId: string;
-		action: FeatureFlagAuditAction;
+		action: "create" | "update" | "delete";
 		changedBy: string;
 		before: unknown;
 		after: unknown;
 	},
-	prismaClient: PrismaClientOrTransaction = prisma,
+	client: DrizzleClientOrTransaction = db,
 ) => {
-	const client = prismaClient ?? prisma;
-
-	return client.featureFlagAuditLog.create({
-		data: {
+	const [result] = await client
+		.insert(featureFlagAuditLogs)
+		.values({
 			flagId: params.flagId,
 			action: params.action,
 			changedBy: params.changedBy,
-			before: params.before as Prisma.InputJsonValue,
-			after: params.after as Prisma.InputJsonValue,
-		},
-	});
+			before: params.before as any,
+			after: params.after as any,
+		})
+		.returning();
+
+	return result;
 };
 
 export const getAuditLogForFlag = async (
 	flagId: string,
 	options?: { skip?: number; take?: number },
-	prismaClient: PrismaClientOrTransaction = prisma,
+	client: DrizzleClientOrTransaction = db,
 ) => {
-	const client = prismaClient ?? prisma;
+	const query = client
+		.select()
+		.from(featureFlagAuditLogs)
+		.where(eq(featureFlagAuditLogs.flagId, flagId))
+		.orderBy(desc(featureFlagAuditLogs.timestamp));
 
-	return client.featureFlagAuditLog.findMany({
-		where: { flagId },
-		orderBy: { timestamp: "desc" },
-		skip: options?.skip,
-		take: options?.take,
-	});
+	if (options?.skip !== undefined) {
+		query.offset(options.skip);
+	}
+
+	if (options?.take !== undefined) {
+		query.limit(options.take);
+	}
+
+	return await query;
 };

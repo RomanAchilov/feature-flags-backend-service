@@ -1,20 +1,17 @@
-import {
-	type FeatureEnvironment,
-	FeatureFlagAuditAction,
-	Prisma,
-} from "@prisma/client";
-import { prisma } from "../db/prisma";
-import { handlePrismaError } from "../errors/prismaErrorHandler";
+import { and, eq, isNull } from "drizzle-orm";
+import { db } from "../db/drizzle";
+import { featureFlagEnvironments, featureFlags } from "../db/schema";
+import { handleDrizzleError } from "../errors/drizzleErrorHandler";
 import { logFlagChange } from "../repositories/featureFlagAuditRepository";
 import {
 	createFlag,
 	deleteFlagByKey,
-	FLAG_WITH_RELATIONS_INCLUDE,
 	type FlagWithRelations,
 	fetchFlagWithRelations,
 	updateFlagByKey,
 } from "../repositories/featureFlagRepository";
 import type { CreateFlagInput, UpdateFlagInput } from "../schemas/flag.schema";
+import { FeatureEnvironmentSchema } from "../schemas/flag.schema";
 import { createTimer, logMutation } from "../utils/flagLogger";
 import {
 	badRequestError,
@@ -36,7 +33,7 @@ import {
 
 type ToggleResult = {
 	key: string;
-	environment: FeatureEnvironment;
+	environment: "development" | "staging" | "production";
 	enabled: boolean;
 };
 
@@ -53,36 +50,33 @@ export const createFlagWithTargets = async (
 	try {
 		logMutation("create", key, "start");
 
-		const createdFlag = await prisma.$transaction(
-			async (tx) => {
-				const created = await createFlag({ key, ...flagData }, tx);
+		const createdFlag = await db.transaction(async (tx) => {
+			const created = await createFlag({ key, ...flagData }, tx);
 
-				if (segmentTargets && segmentTargets.length > 0) {
-					await upsertSegmentTargets(created.id, segmentTargets, tx);
-				}
+			if (segmentTargets && segmentTargets.length > 0) {
+				await upsertSegmentTargets(created.id, segmentTargets, tx);
+			}
 
-				await logFlagChange(
-					{
-						flagId: created.id,
-						action: FeatureFlagAuditAction.create,
-						changedBy: userId,
-						before: null,
-						after: created,
-					},
-					tx,
-				);
+			await logFlagChange(
+				{
+					flagId: created.id,
+					action: "create",
+					changedBy: userId,
+					before: null,
+					after: created,
+				},
+				tx,
+			);
 
-				const hydrated = await fetchFlagWithRelations(created.key, tx, {
-					allowFallback: true,
-					fallbackClient: prisma,
-				});
-				if (!hydrated) {
-					throw new Error("Created flag could not be loaded");
-				}
-				return hydrated;
-			},
-			{ timeout: 15000 },
-		);
+			const hydrated = await fetchFlagWithRelations(created.key, tx, {
+				allowFallback: true,
+				fallbackClient: db,
+			});
+			if (!hydrated) {
+				throw new Error("Created flag could not be loaded");
+			}
+			return hydrated;
+		});
 
 		logMutation("create", key, "success");
 		return ok(createdFlag);
@@ -92,7 +86,7 @@ export const createFlagWithTargets = async (
 		});
 		console.error("Failed to create flag", error);
 
-		return mapPrismaErrorToResult(error, "Failed to create flag");
+		return mapDrizzleErrorToResult(error, "Failed to create flag");
 	}
 };
 
@@ -104,7 +98,7 @@ export const getFlagByKeyWithRelations = async (
 	key: string,
 ): Promise<ServiceResult<FlagWithRelations>> => {
 	try {
-		const flag = await fetchFlagWithRelations(key, prisma, {
+		const flag = await fetchFlagWithRelations(key, db, {
 			allowFallback: true,
 		});
 
@@ -138,49 +132,41 @@ export const updateFlagWithTargets = async (
 			segmentTargets: segmentTargets?.length ?? 0,
 		});
 
-		const result = await prisma.$transaction(
-			async (tx) => {
-				const before = await fetchFlagWithRelations(key, tx, {
-					allowFallback: true,
-					fallbackClient: prisma,
-				});
-				if (!before) return null;
+		const result = await db.transaction(async (tx) => {
+			const before = await fetchFlagWithRelations(key, tx, {
+				allowFallback: true,
+				fallbackClient: db,
+			});
+			if (!before) return null;
 
-				const updated = await updateFlagByKey(
-					key,
-					updateData,
-					tx,
-					FLAG_WITH_RELATIONS_INCLUDE,
-				);
-				if (!updated) return null;
+			const updated = await updateFlagByKey(key, updateData, tx);
+			if (!updated) return null;
 
-				if (segmentTargets) {
-					await replaceSegmentTargets(updated.id, segmentTargets, tx);
-				}
+			if (segmentTargets) {
+				await replaceSegmentTargets(updated.id, segmentTargets, tx);
+			}
 
-				// Всегда загружаем полные relations для консистентного типа
-				const hydrated = await fetchFlagWithRelations(key, tx, {
-					allowFallback: true,
-					fallbackClient: prisma,
-				});
+			// Всегда загружаем полные relations для консистентного типа
+			const hydrated = await fetchFlagWithRelations(key, tx, {
+				allowFallback: true,
+				fallbackClient: db,
+			});
 
-				if (!hydrated) return null;
+			if (!hydrated) return null;
 
-				await logFlagChange(
-					{
-						flagId: updated.id,
-						action: FeatureFlagAuditAction.update,
-						changedBy: userId,
-						before,
-						after: hydrated,
-					},
-					tx,
-				);
+			await logFlagChange(
+				{
+					flagId: updated.id,
+					action: "update",
+					changedBy: userId,
+					before,
+					after: hydrated,
+				},
+				tx,
+			);
 
-				return hydrated;
-			},
-			{ timeout: 15000 },
-		);
+			return hydrated;
+		});
 
 		if (!result) {
 			return err(notFoundError("Flag not found"));
@@ -192,7 +178,7 @@ export const updateFlagWithTargets = async (
 		logMutation("update", key, "error", { elapsedMs: timer.elapsed() });
 		console.error("Failed to update flag", error);
 
-		return mapPrismaErrorToResult(error, "Failed to update flag");
+		return mapDrizzleErrorToResult(error, "Failed to update flag");
 	}
 };
 
@@ -202,7 +188,7 @@ export const updateFlagWithTargets = async (
 
 export const toggleFlagEnvironment = async (
 	key: string,
-	environment: FeatureEnvironment,
+	environment: "development" | "staging" | "production",
 	enabled: boolean,
 	userId: string,
 ): Promise<ServiceResult<ToggleResult>> => {
@@ -216,53 +202,73 @@ export const toggleFlagEnvironment = async (
 			mode: "env-toggle",
 		});
 
-		const result = await prisma.$transaction(
-			async (tx) => {
-				const flag = await tx.featureFlag.findFirst({
-					where: { key, deletedAt: null },
-					select: {
-						id: true,
-						key: true,
-						environments: {
-							where: { environment },
-							select: { id: true, environment: true, enabled: true },
-						},
-					},
+		const result = await db.transaction(async (tx) => {
+			const flags = await tx
+				.select({
+					id: featureFlags.id,
+					key: featureFlags.key,
+				})
+				.from(featureFlags)
+				.where(and(eq(featureFlags.key, key), isNull(featureFlags.deletedAt)))
+				.limit(1);
+
+			if (flags.length === 0) {
+				return null;
+			}
+
+			const flag = flags[0];
+
+			const envs = await tx
+				.select({
+					id: featureFlagEnvironments.id,
+					environment: featureFlagEnvironments.environment,
+					enabled: featureFlagEnvironments.enabled,
+				})
+				.from(featureFlagEnvironments)
+				.where(
+					and(
+						eq(featureFlagEnvironments.flagId, flag.id),
+						eq(featureFlagEnvironments.environment, environment),
+					),
+				)
+				.limit(1);
+
+			if (envs.length === 0) {
+				return null;
+			}
+
+			const env = envs[0];
+
+			const [updatedEnv] = await tx
+				.update(featureFlagEnvironments)
+				.set({ enabled, updatedAt: new Date() })
+				.where(eq(featureFlagEnvironments.id, env.id))
+				.returning({
+					id: featureFlagEnvironments.id,
+					environment: featureFlagEnvironments.environment,
+					enabled: featureFlagEnvironments.enabled,
 				});
 
-				if (!flag || flag.environments.length === 0) {
-					return null;
-				}
-
-				const env = flag.environments[0];
-				const updatedEnv = await tx.featureFlagEnvironment.update({
-					where: { id: env.id },
-					data: { enabled },
-					select: { id: true, environment: true, enabled: true },
-				});
-
-				await logFlagChange(
-					{
-						flagId: flag.id,
-						action: FeatureFlagAuditAction.update,
-						changedBy: userId,
-						before: { environment: env.environment, enabled: env.enabled },
-						after: {
-							environment: updatedEnv.environment,
-							enabled: updatedEnv.enabled,
-						},
+			await logFlagChange(
+				{
+					flagId: flag.id,
+					action: "update",
+					changedBy: userId,
+					before: { environment: env.environment, enabled: env.enabled },
+					after: {
+						environment: updatedEnv.environment,
+						enabled: updatedEnv.enabled,
 					},
-					tx,
-				);
+				},
+				tx,
+			);
 
-				return {
-					key: flag.key,
-					environment: updatedEnv.environment,
-					enabled: updatedEnv.enabled,
-				};
-			},
-			{ timeout: 10000 },
-		);
+			return {
+				key: flag.key,
+				environment: updatedEnv.environment,
+				enabled: updatedEnv.enabled,
+			};
+		});
 
 		if (!result) {
 			return err(notFoundError("Flag or environment not found"));
@@ -283,7 +289,7 @@ export const toggleFlagEnvironment = async (
 		});
 		console.error("Failed to toggle environment", error);
 
-		return mapPrismaErrorToResult(error, "Failed to toggle environment");
+		return mapDrizzleErrorToResult(error, "Failed to toggle environment");
 	}
 };
 
@@ -308,7 +314,7 @@ export const softDeleteFlag = async (
 
 		await logFlagChange({
 			flagId: existing.id,
-			action: FeatureFlagAuditAction.delete,
+			action: "delete",
 			changedBy: userId,
 			before: existing,
 			after: null,
@@ -325,21 +331,17 @@ export const softDeleteFlag = async (
 // Хелперы
 // ─────────────────────────────────────────────────────────────────────────────
 
-const mapPrismaErrorToResult = <T>(
+const mapDrizzleErrorToResult = <T>(
 	error: unknown,
 	fallbackMessage: string,
 ): ServiceResult<T> => {
-	const handled = handlePrismaError(error);
+	const handled = handleDrizzleError(error);
 
 	if (handled) {
 		if (handled.status === 409) {
 			return err(conflictError(handled.body.error.message));
 		}
 		return err(badRequestError(handled.body.error.message));
-	}
-
-	if (error instanceof Prisma.PrismaClientKnownRequestError) {
-		return err(badRequestError("Database operation failed"));
 	}
 
 	return err(internalError(fallbackMessage));

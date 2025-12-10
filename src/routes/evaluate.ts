@@ -1,6 +1,12 @@
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { z } from "zod";
-import { prisma } from "../db/prisma";
+import { db } from "../db/drizzle";
+import {
+	featureFlagEnvironments,
+	featureFlagSegmentTargets,
+	featureFlags,
+} from "../db/schema";
 import type {
 	Environment,
 	FeatureFlagWithEnvs,
@@ -43,33 +49,70 @@ evaluateRoute.post("/", async (c) => {
 	const { environment, user, flags } = parsed.data;
 
 	try {
-		const foundFlags = await prisma.featureFlag.findMany({
-			where: { key: { in: flags }, deletedAt: null },
-			include: {
-				environments: {
-					include: {
-						segmentTargets: {
-							orderBy: { createdAt: "asc" },
-						},
-					},
-				},
-			},
-		});
+		// Загружаем флаги
+		const foundFlags = await db
+			.select()
+			.from(featureFlags)
+			.where(
+				and(inArray(featureFlags.key, flags), isNull(featureFlags.deletedAt)),
+			);
+
+		if (foundFlags.length === 0) {
+			return c.json({
+				flags: Object.fromEntries(flags.map((k) => [k, false])),
+			});
+		}
+
+		const flagIds = foundFlags.map((f) => f.id);
+
+		// Загружаем environments
+		const envs = await db
+			.select()
+			.from(featureFlagEnvironments)
+			.where(inArray(featureFlagEnvironments.flagId, flagIds));
+
+		const envIds = envs.map((e) => e.id);
+
+		// Загружаем segment targets
+		const segmentTargets =
+			envIds.length > 0
+				? await db
+						.select()
+						.from(featureFlagSegmentTargets)
+						.where(inArray(featureFlagSegmentTargets.flagEnvironmentId, envIds))
+						.orderBy(featureFlagSegmentTargets.createdAt)
+				: [];
+
+		// Группируем данные
+		const envsByFlagId = new Map<string, typeof envs>();
+		for (const env of envs) {
+			const existing = envsByFlagId.get(env.flagId) ?? [];
+			existing.push(env);
+			envsByFlagId.set(env.flagId, existing);
+		}
+
+		const targetsByEnvId = new Map<string, typeof segmentTargets>();
+		for (const target of segmentTargets) {
+			const existing = targetsByEnvId.get(target.flagEnvironmentId) ?? [];
+			existing.push(target);
+			targetsByEnvId.set(target.flagEnvironmentId, existing);
+		}
 
 		const domainFlags: Record<string, FeatureFlagWithEnvs> = {};
 		for (const flag of foundFlags) {
+			const flagEnvs = envsByFlagId.get(flag.id) ?? [];
 			domainFlags[flag.key] = {
 				id: flag.id,
 				key: flag.key,
 				name: flag.name,
 				description: flag.description,
-				type: flag.type,
-				environments: flag.environments.map((env) => ({
+				type: flag.type as "BOOLEAN" | "MULTIVARIANT",
+				environments: flagEnvs.map((env) => ({
 					environment: env.environment as Environment,
 					enabled: env.enabled,
 					rolloutPercentage: env.rolloutPercentage,
 					segmentTargets:
-						env.segmentTargets?.map((target) => ({
+						targetsByEnvId.get(env.id)?.map((target) => ({
 							segment: target.segment.toLowerCase(),
 							include: target.include,
 						})) ?? [],

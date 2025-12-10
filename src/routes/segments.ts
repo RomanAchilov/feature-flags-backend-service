@@ -1,6 +1,11 @@
+import { eq, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { z } from "zod";
-import { prisma } from "../db/prisma";
+import { db } from "../db/drizzle";
+import {
+	featureFlagSegmentTargets,
+	featureSegmentDefinitions,
+} from "../db/schema";
 import type { CurrentUser } from "../middleware/auth";
 
 const SegmentNameSchema = z
@@ -35,15 +40,14 @@ export const segmentsRoute = new Hono<{
 
 segmentsRoute.get("/", async (c) => {
 	const [defined, used] = await Promise.all([
-		prisma.featureSegmentDefinition.findMany({
-			select: { name: true },
-			orderBy: { createdAt: "asc" },
-		}),
-		prisma.featureFlagSegmentTarget.findMany({
-			select: { segment: true },
-			distinct: ["segment"],
-			orderBy: { segment: "asc" },
-		}),
+		db
+			.select({ name: featureSegmentDefinitions.name })
+			.from(featureSegmentDefinitions)
+			.orderBy(featureSegmentDefinitions.createdAt),
+		db
+			.selectDistinct({ segment: featureFlagSegmentTargets.segment })
+			.from(featureFlagSegmentTargets)
+			.orderBy(featureFlagSegmentTargets.segment),
 	]);
 
 	const names = Array.from(
@@ -79,18 +83,20 @@ segmentsRoute.post("/", async (c) => {
 		return c.json<SegmentResponse>({ data: { name } });
 	}
 
-	const existing = await prisma.featureSegmentDefinition.findFirst({
-		where: { name },
-		select: { name: true },
-	});
-	if (existing) {
-		return c.json<SegmentResponse>({ data: { name: existing.name } });
+	const existing = await db
+		.select({ name: featureSegmentDefinitions.name })
+		.from(featureSegmentDefinitions)
+		.where(eq(featureSegmentDefinitions.name, name))
+		.limit(1);
+
+	if (existing.length > 0) {
+		return c.json<SegmentResponse>({ data: { name: existing[0].name } });
 	}
 
-	const created = await prisma.featureSegmentDefinition.create({
-		data: { name },
-		select: { name: true },
-	});
+	const [created] = await db
+		.insert(featureSegmentDefinitions)
+		.values({ name })
+		.returning({ name: featureSegmentDefinitions.name });
 
 	return c.json<SegmentResponse>({ data: created }, 201);
 });

@@ -1,10 +1,13 @@
-import type { FeatureEnvironment, Prisma } from "@prisma/client";
-import { prisma } from "../db/prisma";
+import { eq, inArray, sql } from "drizzle-orm";
+import { db } from "../db/drizzle";
+import {
+	featureFlagEnvironments,
+	featureFlagSegmentTargets,
+} from "../db/schema";
+import type { DrizzleClientOrTransaction } from "../repositories/featureFlagRepository";
 import type { SegmentTargetInput } from "../schemas/flag.schema";
 
-type PrismaClientOrTransaction = Prisma.TransactionClient | typeof prisma;
-
-type EnvironmentMap = Map<FeatureEnvironment, string>;
+type EnvironmentMap = Map<string, string>;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Внутренние хелперы
@@ -12,12 +15,16 @@ type EnvironmentMap = Map<FeatureEnvironment, string>;
 
 const getEnvironmentMap = async (
 	flagId: string,
-	client: PrismaClientOrTransaction,
+	client: DrizzleClientOrTransaction,
 ): Promise<EnvironmentMap> => {
-	const envs = await client.featureFlagEnvironment.findMany({
-		where: { flagId },
-		select: { id: true, environment: true },
-	});
+	const envs = await client
+		.select({
+			id: featureFlagEnvironments.id,
+			environment: featureFlagEnvironments.environment,
+		})
+		.from(featureFlagEnvironments)
+		.where(eq(featureFlagEnvironments.flagId, flagId));
+
 	return new Map(envs.map((env) => [env.environment, env.id]));
 };
 
@@ -56,17 +63,20 @@ const mapSegmentTargetsToCreate = (
 export const upsertSegmentTargets = async (
 	flagId: string,
 	segmentTargets: SegmentTargetInput[],
-	client: PrismaClientOrTransaction = prisma,
+	client: DrizzleClientOrTransaction = db,
 ): Promise<void> => {
 	const envMap = await getEnvironmentMap(flagId, client);
 	const data = mapSegmentTargetsToCreate(segmentTargets, envMap);
 
 	if (data.length === 0) return;
 
-	await client.featureFlagSegmentTarget.createMany({
-		data,
-		skipDuplicates: true,
-	});
+	// Drizzle не имеет skipDuplicates, поэтому используем ON CONFLICT
+	for (const item of data) {
+		await client
+			.insert(featureFlagSegmentTargets)
+			.values(item)
+			.onConflictDoNothing();
+	}
 };
 
 /**
@@ -76,21 +86,20 @@ export const upsertSegmentTargets = async (
 export const replaceSegmentTargets = async (
 	flagId: string,
 	segmentTargets: SegmentTargetInput[],
-	client: PrismaClientOrTransaction = prisma,
+	client: DrizzleClientOrTransaction = db,
 ): Promise<void> => {
 	const envMap = await getEnvironmentMap(flagId, client);
 	const envIds = Array.from(envMap.values());
 
+	if (envIds.length === 0) return;
+
 	// Удаляем все существующие targets для этого флага
-	await client.featureFlagSegmentTarget.deleteMany({
-		where: { flagEnvironmentId: { in: envIds } },
-	});
+	await client
+		.delete(featureFlagSegmentTargets)
+		.where(inArray(featureFlagSegmentTargets.flagEnvironmentId, envIds));
 
 	const data = mapSegmentTargetsToCreate(segmentTargets, envMap);
 	if (data.length > 0) {
-		await client.featureFlagSegmentTarget.createMany({
-			data,
-			skipDuplicates: true,
-		});
+		await client.insert(featureFlagSegmentTargets).values(data);
 	}
 };

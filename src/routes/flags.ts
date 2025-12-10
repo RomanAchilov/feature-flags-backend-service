@@ -1,13 +1,15 @@
-import { FeatureEnvironment, Prisma } from "@prisma/client";
+import { count, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { z } from "zod";
-import { prisma } from "../db/prisma";
+import { db } from "../db/drizzle";
+import { featureFlagAuditLogs } from "../db/schema";
 import type { CurrentUser } from "../middleware/auth";
 import { validateFlagKey } from "../middleware/validateFlagKey";
 import { getAuditLogForFlag } from "../repositories/featureFlagAuditRepository";
 import { getFlagByKey, listFlags } from "../repositories/featureFlagRepository";
 import {
 	CreateFlagSchema,
+	FeatureEnvironmentSchema,
 	PaginationSchema,
 	ToggleEnvironmentSchema,
 	UpdateFlagSchema,
@@ -49,16 +51,13 @@ flagsRoute.get("/", async (c) => {
 	const pageSize = Number.parseInt(c.req.query("pageSize") ?? "20", 10);
 
 	// Валидация environment
-	let envFilter: FeatureEnvironment | undefined;
+	let envFilter: "development" | "staging" | "production" | undefined;
 	if (environment) {
-		if (
-			!Object.values(FeatureEnvironment).includes(
-				environment as FeatureEnvironment,
-			)
-		) {
+		const parsed = FeatureEnvironmentSchema.safeParse(environment);
+		if (!parsed.success) {
 			return badRequest(c, "Invalid environment");
 		}
-		envFilter = environment as FeatureEnvironment;
+		envFilter = parsed.data;
 	}
 
 	const skip = page > 0 ? (page - 1) * pageSize : 0;
@@ -73,9 +72,6 @@ flagsRoute.get("/", async (c) => {
 		return success(c, flags);
 	} catch (error) {
 		console.error("Failed to list flags", error);
-		if (error instanceof Prisma.PrismaClientKnownRequestError) {
-			return success(c, []);
-		}
 		return internalServerError(c, "Failed to list flags");
 	}
 });
@@ -187,10 +183,15 @@ flagByKeyRoutes.get("/audit", async (c) => {
 			return notFound(c, "Flag not found");
 		}
 
-		const [items, total] = await Promise.all([
+		const [items, totalResult] = await Promise.all([
 			getAuditLogForFlag(flag.id, { skip, take: pageSize }),
-			prisma.featureFlagAuditLog.count({ where: { flagId: flag.id } }),
+			db
+				.select({ count: count() })
+				.from(featureFlagAuditLogs)
+				.where(eq(featureFlagAuditLogs.flagId, flag.id)),
 		]);
+
+		const total = totalResult[0]?.count ?? 0;
 
 		return c.json({ data: items, page, pageSize, total });
 	} catch (error) {
@@ -203,9 +204,9 @@ flagByKeyRoutes.get("/audit", async (c) => {
 flagByKeyRoutes.patch("/environments/:environment", async (c) => {
 	const key = c.get("flagKey") as string;
 
-	const environmentParsed = z
-		.nativeEnum(FeatureEnvironment)
-		.safeParse(c.req.param("environment"));
+	const environmentParsed = FeatureEnvironmentSchema.safeParse(
+		c.req.param("environment"),
+	);
 
 	if (!environmentParsed.success) {
 		return badRequest(
