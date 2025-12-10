@@ -153,13 +153,13 @@ postgresql:
   enabled: false
 
 # ───────────────────────────────────────────────────────────────────────────────
-# Init Container для миграций
+# Init Container для миграций Drizzle
 # ───────────────────────────────────────────────────────────────────────────────
 
 initContainers:
   - name: run-migrations
     image: your-registry.io/feature-flags-backend:1.0.0
-    command: ["npx", "prisma", "migrate", "deploy"]
+    command: ["npm", "run", "db:migrate"]
     env:
       - name: DATABASE_URL
         valueFrom:

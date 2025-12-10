@@ -44,11 +44,15 @@ COPY tsconfig.json ./
 COPY drizzle.config.ts ./
 COPY src ./src
 
+# Копируем миграции Drizzle (папка должна существовать в репозитории)
+# Если папки нет, создайте пустую: mkdir drizzle && touch drizzle/.gitkeep
+COPY drizzle ./drizzle
+
 # Собираем TypeScript
 RUN npm run build
 
-# Удаляем dev-зависимости
-RUN npm prune --production
+# Удаляем dev-зависимости, но оставляем drizzle-kit для миграций в init container
+RUN npm prune --production && npm install drizzle-kit --save-optional --no-save
 
 # ───────────────────────────────────────────────────────────────────────────────
 # Stage 3: Production Runner
@@ -71,6 +75,9 @@ WORKDIR /app
 COPY --from=builder --chown=hono:nodejs /app/node_modules ./node_modules
 COPY --from=builder --chown=hono:nodejs /app/dist ./dist
 COPY --from=builder --chown=hono:nodejs /app/package.json ./
+COPY --from=builder --chown=hono:nodejs /app/drizzle.config.ts ./
+# Копируем миграции Drizzle (нужны для init container)
+COPY --from=builder --chown=hono:nodejs /app/drizzle ./drizzle
 
 # Переключаемся на непривилегированного пользователя
 USER hono
