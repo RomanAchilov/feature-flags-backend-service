@@ -7,7 +7,6 @@ import {
 	inArray,
 	isNull,
 	or,
-	sql,
 } from "drizzle-orm";
 import type { PgTransaction } from "drizzle-orm/pg-core";
 import { db } from "../db/drizzle";
@@ -25,10 +24,6 @@ import type {
 	CreateFlagInput,
 	EnvironmentConfig,
 	UpdateFlagInput,
-} from "../schemas/flag.schema";
-import {
-	FeatureEnvironmentSchema,
-	FeatureFlagTypeSchema,
 } from "../schemas/flag.schema";
 
 export type DrizzleDb = typeof db;
@@ -205,6 +200,7 @@ export const createFlag = async (
 			.returning();
 
 		// Создаём новые environments
+		const envNow = new Date();
 		const newEnvs = await client
 			.insert(featureFlagEnvironments)
 			.values(
@@ -213,6 +209,8 @@ export const createFlag = async (
 					environment: env.environment,
 					enabled: env.enabled ?? false,
 					rolloutPercentage: env.rolloutPercentage ?? null,
+					createdAt: envNow,
+					updatedAt: envNow,
 				})),
 			)
 			.returning();
@@ -224,6 +222,7 @@ export const createFlag = async (
 	}
 
 	// Создаём новый флаг
+	const now = new Date();
 	const [newFlag] = await client
 		.insert(featureFlags)
 		.values({
@@ -231,6 +230,8 @@ export const createFlag = async (
 			name: data.name,
 			description: data.description ?? null,
 			type: (data.type ?? "BOOLEAN") as "BOOLEAN" | "MULTIVARIANT",
+			createdAt: now,
+			updatedAt: now,
 		})
 		.returning();
 
@@ -242,6 +243,8 @@ export const createFlag = async (
 				environment: env.environment,
 				enabled: env.enabled ?? false,
 				rolloutPercentage: env.rolloutPercentage ?? null,
+				createdAt: now,
+				updatedAt: now,
 			})),
 		)
 		.returning();
@@ -324,11 +327,14 @@ export const updateFlagByKey = async (
 					.where(eq(featureFlagEnvironments.id, existingEnv[0].id));
 			} else {
 				// Создаём новый
+				const envNow = new Date();
 				await client.insert(featureFlagEnvironments).values({
 					flagId: flag.id,
 					environment: env.environment,
 					enabled: env.enabled ?? false,
 					rolloutPercentage: env.rolloutPercentage ?? null,
+					createdAt: envNow,
+					updatedAt: envNow,
 				});
 			}
 		}

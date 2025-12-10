@@ -1,4 +1,3 @@
-import { sql } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "../../src/db/drizzle";
 import { health } from "../../src/routes/health";

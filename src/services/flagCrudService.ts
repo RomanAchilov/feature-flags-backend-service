@@ -11,7 +11,6 @@ import {
 	updateFlagByKey,
 } from "../repositories/featureFlagRepository";
 import type { CreateFlagInput, UpdateFlagInput } from "../schemas/flag.schema";
-import { FeatureEnvironmentSchema } from "../schemas/flag.schema";
 import { createTimer, logMutation } from "../utils/flagLogger";
 import {
 	badRequestError,
@@ -341,7 +340,19 @@ const mapDrizzleErrorToResult = <T>(
 		if (handled.status === 409) {
 			return err(conflictError(handled.body.error.message));
 		}
-		return err(badRequestError(handled.body.error.message));
+		const details: Record<string, unknown> = {};
+		if (handled.body.error.field) {
+			details.field = handled.body.error.field;
+		}
+		if (handled.body.error.table) {
+			details.table = handled.body.error.table;
+		}
+		return err(
+			badRequestError(
+				handled.body.error.message,
+				Object.keys(details).length > 0 ? details : undefined,
+			),
+		);
 	}
 
 	return err(internalError(fallbackMessage));

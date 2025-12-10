@@ -145,9 +145,47 @@ describe("flags route", () => {
 		expect((await res.json()).error.code).toBe("bad_request");
 	});
 
+	it("returns detailed error message for NOT NULL constraint violations", async () => {
+		// Симулируем ошибку NOT NULL
+		const pgError = new Error("null value in column");
+		(pgError as any).code = "23502";
+		(pgError as any).column_name = "updatedAt";
+		(pgError as any).table_name = "FeatureFlag";
+
+		createFlagMock.mockRejectedValueOnce(pgError);
+
+		const app = createAppWithUser();
+		const res = await app.request("/flags", {
+			method: "POST",
+			body: JSON.stringify({
+				key: "test-flag",
+				name: "Test Flag",
+			}),
+			headers: { "content-type": "application/json" },
+		});
+		const body = await res.json();
+
+		expect(res.status).toBe(400);
+		expect(body.error.code).toBe("bad_request");
+		expect(body.error.message).toContain("updatedAt");
+		expect(body.error.details).toBeDefined();
+		expect(body.error.details.field).toBe("updatedAt");
+		expect(body.error.details.table).toBe("FeatureFlag");
+	});
+
 	it("creates a flag and returns enriched data", async () => {
-		createFlagMock.mockResolvedValueOnce(sampleFlag);
-		fetchFlagWithRelationsMock.mockResolvedValueOnce(sampleFlag);
+		const flagWithTimestamps = {
+			...sampleFlag,
+			createdAt: new Date(),
+			updatedAt: new Date(),
+			environments: sampleFlag.environments.map((env) => ({
+				...env,
+				createdAt: new Date(),
+				updatedAt: new Date(),
+			})),
+		};
+		createFlagMock.mockResolvedValueOnce(flagWithTimestamps);
+		fetchFlagWithRelationsMock.mockResolvedValueOnce(flagWithTimestamps);
 
 		const app = createAppWithUser();
 		const res = await app.request("/flags", {
@@ -169,7 +207,7 @@ describe("flags route", () => {
 				action: "create",
 				changedBy: "tester",
 				before: null,
-				after: sampleFlag,
+				after: flagWithTimestamps,
 			},
 			expect.anything(),
 		);

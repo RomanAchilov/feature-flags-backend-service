@@ -6,6 +6,8 @@ export type DrizzleErrorResult = {
 		error: {
 			code: string;
 			message: string;
+			field?: string;
+			table?: string;
 		};
 	};
 };
@@ -51,16 +53,36 @@ export const handleDrizzleError = (
 				};
 
 			// Not null violation
-			case "23502":
+			case "23502": {
+				const columnName = pgError.column_name;
+				const tableName = pgError.table_name;
+				const detail = pgError.detail;
+
+				let message = "Required field is missing";
+				if (columnName && tableName) {
+					message = `Required field "${columnName}" is missing in table "${tableName}"`;
+				} else if (columnName) {
+					message = `Required field "${columnName}" is missing`;
+				} else if (detail) {
+					// Пытаемся извлечь информацию из detail
+					const columnMatch = detail.match(/column "(\w+)"/);
+					if (columnMatch) {
+						message = `Required field "${columnMatch[1]}" is missing`;
+					}
+				}
+
 				return {
 					status: 400,
 					body: {
 						error: {
 							code: "bad_request",
-							message: "Required field is missing",
+							message,
+							...(columnName && { field: columnName }),
+							...(tableName && { table: tableName }),
 						},
 					},
 				};
+			}
 
 			// Check constraint violation
 			case "23514":
